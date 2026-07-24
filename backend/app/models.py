@@ -26,9 +26,27 @@ class EdgeModel(Base):
     from_station_id = Column(String, nullable=False)
     to_station_id = Column(String, nullable=False)
     mode = Column(String, nullable=False)        # train | road | metro | bus
+    line = Column(String, nullable=True)          # e.g. "Western Line", "Yellow Line" — display only
     time_minutes = Column(Integer, nullable=False)
     cost_rupees = Column(Integer, nullable=False)
     comfort_score = Column(Float, nullable=False)  # 1 (worst) - 5 (best), baseline
+
+
+class InterchangeModel(Base):
+    """
+    A walking transfer between two DIFFERENT physical stations that serve
+    different lines/modes but are close enough to walk between — e.g.
+    Andheri (Western Line) to Andheri West (Yellow Line Metro). This is
+    different from same-station mode transfers (which the routing engine
+    generates automatically) because these connect two distinct station
+    records in the database.
+    """
+    __tablename__ = "interchanges"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    from_station_id = Column(String, nullable=False)
+    to_station_id = Column(String, nullable=False)
+    walk_minutes = Column(Integer, nullable=False)
 
 
 class CrowdingRuleModel(Base):

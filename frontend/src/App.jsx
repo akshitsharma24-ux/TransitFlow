@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import SearchBoard from "./components/SearchBoard";
 import RouteCard from "./components/RouteCard";
 import MapPanel from "./components/MapPanel";
+import SavedRoutes from "./components/SavedRoutes";
 import { EmptyState, ErrorState } from "./components/StatusStates";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
@@ -29,8 +30,7 @@ function App() {
       .catch(() => setError("Could not load station list. Is the backend running?"));
   }, []);
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  async function runSearch(o, d) {
     setLoading(true);
     setError(null);
     setResults(null);
@@ -41,7 +41,7 @@ function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          origin, destination, priority,
+          origin: o, destination: d, priority,
           is_raining: isRaining, hour, day_type: dayType,
         }),
       });
@@ -57,6 +57,17 @@ function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    runSearch(origin, destination);
+  }
+
+  function selectSavedRoute(o, d) {
+    setOrigin(o);
+    setDestination(d);
+    runSearch(o, d);
   }
 
   const selectedRoute = results?.options?.[selectedIndex];
@@ -75,6 +86,15 @@ function App() {
           onSubmit={handleSubmit}
           loading={loading}
         />
+
+        {Object.keys(stations).length > 0 && (
+          <SavedRoutes
+            stations={stations}
+            origin={origin}
+            destination={destination}
+            onSelect={selectSavedRoute}
+          />
+        )}
 
         <div className="grid lg:grid-cols-5 gap-6 mt-8">
           <div className="lg:col-span-2 space-y-3">

@@ -1,12 +1,15 @@
 """
-TransitFlow — Backend (Day 4)
+TransitFlow — Backend (Day 7)
 
 New in this version:
-- Stations now come from the database (via routing_engine's GRAPH), not
-  a hardcoded dict
-- RouteRequest accepts optional hour (0-23) and day_type (weekday/weekend)
-  for peak-hour crowding; defaults to the server's current time if omitted
-- Explanations mention crowding context, not just rain
+- RouteOption now includes `legs`: an ordered list of ride/walk steps,
+  each with station names (not just IDs) — this is what lets the
+  frontend show a real itinerary like:
+    Local Train: Churchgate -> Andheri (45 min)
+    Walk: Andheri -> Andheri West (6 min)
+    Yellow Line: Andheri West -> Dahanukarwadi (22 min)
+- mode label now uses real line names (e.g. "Yellow Line") instead of
+  the generic "Metro" when available.
 
 Run it with:
     uvicorn app.main:app --reload
@@ -20,7 +23,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app.routing_engine import GRAPH, MODE_LABELS, get_ranked_routes, default_hour_and_day_type, fare_pass_insight
+from app.routing_engine import (
+    STATION_INFO, STATION_SERVICES, MODE_LABELS, get_ranked_routes, default_hour_and_day_type, fare_pass_insight,
+)
 
 app = FastAPI(title="TransitFlow API")
 
@@ -37,10 +42,10 @@ app.add_middleware(
 class RouteRequest(BaseModel):
     origin: str
     destination: str
-    priority: str = "fastest"       # fastest | cheapest | comfortable
+    priority: str = "fastest"
     is_raining: bool = False
-    hour: Optional[int] = None       # 0-23; defaults to current server hour
-    day_type: Optional[str] = None   # "weekday" | "weekend"; defaults to today
+    hour: Optional[int] = None
+    day_type: Optional[str] = None
 
 
 class StationPoint(BaseModel):
@@ -48,6 +53,15 @@ class StationPoint(BaseModel):
     name: str
     lat: float
     lon: float
+
+
+class Leg(BaseModel):
+    type: str                 # "ride" | "walk"
+    mode: Optional[str]        # "train" | "metro" | "bus" | "road" | None (for walk)
+    line: Optional[str]        # e.g. "Yellow Line", None for walk/road/bus
+    from_station: StationPoint
+    to_station: StationPoint
+    time_minutes: int
 
 
 class FarePassInsight(BaseModel):
@@ -64,6 +78,7 @@ class RouteOption(BaseModel):
     score: float
     explanation: str
     path: list[StationPoint]
+    legs: list[Leg]
     fare_pass: Optional[FarePassInsight] = None
 
 
@@ -79,9 +94,53 @@ class RouteResponse(BaseModel):
 
 # --- Helpers ---
 
+def station_point(station_id: str) -> StationPoint:
+    node = STATION_INFO[station_id]
+    return StationPoint(id=station_id, name=node["name"], lat=node["lat"], lon=node["lon"])
+
+
+def leg_label(leg: dict) -> str:
+    """Prefers the real line name (e.g. 'Yellow Line') over the generic mode label."""
+    if leg["type"] == "walk":
+        return "Walk"
+    return leg["line"] if leg["line"] else MODE_LABELS.get(leg["mode"], leg["mode"])
+
+
+def build_legs(raw_legs: list[dict]) -> list[Leg]:
+    return [
+        Leg(
+            type=leg["type"],
+            mode=leg["mode"],
+            line=leg["line"],
+            from_station=station_point(leg["from_station"]),
+            to_station=station_point(leg["to_station"]),
+            time_minutes=leg["time_minutes"],
+        )
+        for leg in raw_legs
+    ]
+
+
+def mode_sequence_label(legs: list[dict]) -> str:
+    """Builds the card title from ride legs, using real line names where available."""
+    labels = []
+    for leg in legs:
+        if leg["type"] != "ride":
+            continue
+        label = leg_label(leg)
+        if label not in labels:
+            labels.append(label)
+    return " + ".join(labels) if labels else "Route"
+
+
 def describe_route(route: dict, is_raining: bool) -> str:
-    mode_label = MODE_LABELS.get(route["modes"][0], route["modes"][0])
-    parts = [f"{mode_label} route."]
+    ride_legs = [l for l in route["legs"] if l["type"] == "ride"]
+    walk_legs = [l for l in route["legs"] if l["type"] == "walk"]
+
+    parts = [f"{mode_sequence_label(route['legs'])} route."]
+
+    if len(walk_legs) > 0:
+        total_walk = sum(l["time_minutes"] for l in walk_legs)
+        parts.append(f"Includes {len(walk_legs)} interchange walk{'s' if len(walk_legs) > 1 else ''} (~{total_walk} min).")
 
     if route["comfort_score"] <= 2:
         parts.append("Likely crowded, especially at peak hours.")
@@ -93,47 +152,29 @@ def describe_route(route: dict, is_raining: bool) -> str:
     elif route["cost_rupees"] >= 200:
         parts.append("Expensive relative to other options.")
 
-    ctx = route.get("crowding_context", {})
-    is_peak = ctx.get("hour") is not None and (8 <= ctx["hour"] < 11 or 18 <= ctx["hour"] < 21) \
-        and ctx.get("day_type") == "weekday"
-
-    if is_raining and "train" in route["modes"]:
-        parts.append("Note: open platforms and crowding make this less pleasant in rain.")
-    elif is_raining and "metro" in route["modes"] and "train" not in route["modes"]:
-        parts.append("Unaffected by rain (fully enclosed/underground).")
-
-    if is_peak and any(m in route["modes"] for m in ("train", "bus")):
-        parts.append("This falls in a typical weekday rush-hour window — expect extra crowding.")
+    if is_raining:
+        has_underground = any(l["line"] == "Aqua Line" for l in ride_legs)
+        has_train = any(l["mode"] == "train" for l in ride_legs)
+        if has_underground and not has_train:
+            parts.append("Fully underground on the Aqua Line — unaffected by rain.")
+        elif has_train:
+            parts.append("Note: open platforms and crowding make this less pleasant in rain.")
 
     return " ".join(parts)
-
-
-def mode_sequence_label(modes: list[str]) -> str:
-    unique_modes = list(dict.fromkeys(modes))
-    labels = [MODE_LABELS.get(m, m) for m in unique_modes]
-    return " + ".join(labels)
-
-
-def build_path_points(station_path: list[str]) -> list[StationPoint]:
-    points = []
-    for station_id in station_path:
-        node = GRAPH.nodes[station_id]
-        points.append(StationPoint(id=station_id, name=node["name"], lat=node["lat"], lon=node["lon"]))
-    return points
 
 
 # --- Endpoints ---
 
 @app.get("/")
 def health_check():
-    return {"status": "TransitFlow backend is running", "stations_loaded": GRAPH.number_of_nodes()}
+    return {"status": "TransitFlow backend is running", "stations_loaded": len(STATION_INFO)}
 
 
 @app.get("/stations")
 def list_stations():
     return {
-        station_id: {"name": data["name"], "lat": data["lat"], "lon": data["lon"]}
-        for station_id, data in GRAPH.nodes(data=True)
+        station_id: {**info, "serves": STATION_SERVICES.get(station_id, [])}
+        for station_id, info in STATION_INFO.items()
     }
 
 
@@ -142,9 +183,9 @@ def get_routes(request: RouteRequest):
     origin = request.origin.lower()
     destination = request.destination.lower()
 
-    if origin not in GRAPH:
+    if origin not in STATION_INFO:
         raise HTTPException(status_code=400, detail=f"Unknown origin station: '{request.origin}'")
-    if destination not in GRAPH:
+    if destination not in STATION_INFO:
         raise HTTPException(status_code=400, detail=f"Unknown destination station: '{request.destination}'")
     if origin == destination:
         raise HTTPException(status_code=400, detail="Origin and destination must be different.")
@@ -158,27 +199,25 @@ def get_routes(request: RouteRequest):
     if not ranked:
         raise HTTPException(status_code=404, detail="No routes found between these stations.")
 
-    # Different physical paths (e.g. road via Malad vs road via Dadar) can
-    # end up with the same display label ("Car / Auto (Road)"). Since
-    # `ranked` is already sorted best-first, keeping the first occurrence
-    # of each label naturally keeps the best-scoring version of each mode.
+    # Dedupe by display label, keeping the best-scoring (ranked is already sorted)
     seen_labels = set()
     deduped_ranked = []
     for r in ranked:
-        label = mode_sequence_label(r["modes"])
+        label = mode_sequence_label(r["legs"])
         if label not in seen_labels:
             seen_labels.add(label)
             deduped_ranked.append(r)
 
     options = [
         RouteOption(
-            mode=mode_sequence_label(r["modes"]),
+            mode=mode_sequence_label(r["legs"]),
             time_minutes=r["time_minutes"],
             cost_rupees=r["cost_rupees"],
             comfort_score=r["comfort_score"],
             score=r["score"],
             explanation=describe_route(r, request.is_raining),
-            path=build_path_points(r["station_path"]),
+            path=[station_point(sid) for sid in r["station_path"]],
+            legs=build_legs(r["legs"]),
             fare_pass=fare_pass_insight(r["modes"], r["cost_rupees"]),
         )
         for r in deduped_ranked

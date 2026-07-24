@@ -5,13 +5,69 @@
   quiet so this carries the visual identity.
 */
 
-import { CloudRain, Search } from "lucide-react";
+import { useState } from "react";
+import { CloudRain, Search, LocateFixed, Loader2 } from "lucide-react";
+import StationAutocomplete from "./StationAutocomplete";
+
+// Straight-line distance between two lat/lon points, in km (haversine formula)
+function distanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function nearestStation(stations, lat, lon) {
+  let bestId = null;
+  let bestDist = Infinity;
+  for (const [id, s] of Object.entries(stations)) {
+    const d = distanceKm(lat, lon, s.lat, s.lon);
+    if (d < bestDist) {
+      bestDist = d;
+      bestId = id;
+    }
+  }
+  return { id: bestId, distanceKm: bestDist };
+}
 
 export default function SearchBoard({
   stations, origin, setOrigin, destination, setDestination,
   priority, setPriority, hour, setHour, dayType, setDayType,
   isRaining, setIsRaining, onSubmit, loading,
 }) {
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState(null);
+
+  function useMyLocation() {
+    if (!navigator.geolocation) {
+      setLocationError("Location isn't supported in this browser.");
+      return;
+    }
+    setLocating(true);
+    setLocationError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        const nearest = nearestStation(stations, latitude, longitude);
+        if (nearest.id) {
+          setOrigin(nearest.id);
+        } else {
+          setLocationError("Couldn't match your location to a station.");
+        }
+        setLocating(false);
+      },
+      () => {
+        setLocationError("Location access denied or unavailable.");
+        setLocating(false);
+      },
+      { timeout: 8000 }
+    );
+  }
+
   return (
     <form
       onSubmit={onSubmit}
@@ -28,32 +84,37 @@ export default function SearchBoard({
         </div>
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-4 mb-4">
+      <div className="grid sm:grid-cols-2 gap-4 mb-1">
         <Field label="From">
-          <input
-            list="station-list"
+          <StationAutocomplete
+            stations={stations}
             value={origin}
-            onChange={(e) => setOrigin(e.target.value)}
-            placeholder="e.g. borivali"
-            className="board-input"
+            onChange={setOrigin}
+            placeholder="Type a station…"
           />
         </Field>
         <Field label="To">
-          <input
-            list="station-list"
+          <StationAutocomplete
+            stations={stations}
             value={destination}
-            onChange={(e) => setDestination(e.target.value)}
-            placeholder="e.g. churchgate"
-            className="board-input"
+            onChange={setDestination}
+            placeholder="Type a station…"
           />
         </Field>
       </div>
 
-      <datalist id="station-list">
-        {Object.entries(stations).map(([id, s]) => (
-          <option key={id} value={id}>{s.name}</option>
-        ))}
-      </datalist>
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={useMyLocation}
+          disabled={locating}
+          className="flex items-center gap-1.5 text-[11px] font-mono text-paper/50 hover:text-amber transition-colors disabled:opacity-50"
+        >
+          {locating ? <Loader2 size={12} className="animate-spin" /> : <LocateFixed size={12} />}
+          {locating ? "Finding you…" : "Use my location for From"}
+        </button>
+        {locationError && <p className="text-[11px] font-mono text-rust mt-1">{locationError}</p>}
+      </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <Field label="Priority">
