@@ -25,6 +25,17 @@ from app.database import SessionLocal
 from app.models import StationModel, EdgeModel, InterchangeModel, CrowdingRuleModel
 
 TRANSFER_COMFORT = 3.0
+MINIMUM_FARE = 5  # Indian Railways/Metro minimum fare regardless of distance, applied per paid leg
+
+# Metro fare slabs — calibrated against the real combined Yellow Line +
+# Red Line fare chart (they interconnect at Dahisar East and run as one
+# integrated fare network). Real metro fares are a LOOKUP based on total
+# trip distance, not a sum of per-hop charges — that's exactly the bug
+# fixed here. Approximated as ₹10 per ~4-station band, capped at ₹60,
+# which matches the chart's pattern (e.g. same/near station ≈ ₹10,
+# far-end-to-far-end on the combined line ≈ ₹60).
+def metro_slab_fare(num_hops: int) -> int:
+    return min(60, 10 * (1 + num_hops // 4))
 
 
 def build_graph():
@@ -199,16 +210,20 @@ def _build_legs(node_path, objective):
         leg_type = "walk" if is_walk else "ride"
         leg_mode = None if is_walk else edge["mode"]
         leg_line = None if is_walk else edge["line"]
+        leg_cost = 0 if is_walk else edge["cost_rupees"]
 
         if legs and legs[-1]["type"] == leg_type and legs[-1]["mode"] == leg_mode \
                 and legs[-1]["line"] == leg_line and legs[-1]["to_station"] == from_station:
             legs[-1]["to_station"] = to_station
             legs[-1]["time_minutes"] += edge["time_minutes"]
+            legs[-1]["cost_rupees"] += leg_cost
+            legs[-1]["hop_count"] += 1
         else:
             legs.append({
                 "type": leg_type, "mode": leg_mode, "line": leg_line,
                 "from_station": from_station, "to_station": to_station,
-                "time_minutes": edge["time_minutes"],
+                "time_minutes": edge["time_minutes"], "cost_rupees": leg_cost,
+                "hop_count": 1,
             })
 
         if not station_path or station_path[-1] != from_station:
@@ -220,6 +235,22 @@ def _build_legs(node_path, objective):
     for sid in station_path[1:]:
         if sid != deduped_station_path[-1]:
             deduped_station_path.append(sid)
+
+    # Fare correction pass, once per completed leg (not per hop — that was
+    # the original bug, since summing per-hop charges compounds unrealistically
+    # on long lines):
+    # 1. Yellow Line / Red Line legs use the real slab-fare lookup, based
+    #    on the actual chart supplied (see metro_slab_fare above).
+    # 2. Everything else (train, Aqua Line, bus) falls back to the flat
+    #    per-hop sum already computed, with the ₹5 minimum-fare floor applied.
+    for leg in legs:
+        if leg["type"] != "ride":
+            continue
+        if leg["line"] in ("Yellow Line", "Red Line"):
+            leg["cost_rupees"] = metro_slab_fare(leg["hop_count"])
+        else:
+            leg["cost_rupees"] = max(leg["cost_rupees"], MINIMUM_FARE)
+    total_cost = sum(leg["cost_rupees"] for leg in legs if leg["type"] == "ride")
 
     return legs, deduped_station_path, modes_used, comfort_scores, total_time, total_cost
 
@@ -247,11 +278,22 @@ def explore_routes(origin: str, destination: str):
                     _build_legs(node_path, objective)
 
                 if not modes_used:
-                    continue
+                    # A legitimate case, not junk: for closely-spaced
+                    # interchange stations (e.g. Gundavali walking distance
+                    # to Andheri West via the Andheri skywalk), the fastest
+                    # "route" can genuinely be pure walking with no vehicle
+                    # at all. Keep it — just give it a sensible default
+                    # comfort score since there's no ride leg to average.
+                    walk_comfort = 4.5
+                else:
+                    walk_comfort = None
 
                 # Dedup key includes line, so a Yellow-Line route and a
                 # Red-Line route with the same base mode stay distinct.
-                key = tuple((leg["mode"], leg["line"]) for leg in legs if leg["type"] == "ride")
+                # Walk-only candidates get their own fixed key so they
+                # don't collide with (or get shadowed by) ride-based ones.
+                key = tuple((leg["mode"], leg["line"]) for leg in legs if leg["type"] == "ride") \
+                    or ("walk_only",)
 
                 candidate = {
                     "modes": modes_used,
@@ -259,7 +301,8 @@ def explore_routes(origin: str, destination: str):
                     "station_path": station_path,
                     "time_minutes": total_time,
                     "cost_rupees": total_cost,
-                    "comfort_score": round(sum(comfort_scores) / len(comfort_scores), 1),
+                    "comfort_score": walk_comfort if walk_comfort is not None
+                        else round(sum(comfort_scores) / len(comfort_scores), 1),
                 }
 
                 if key not in candidates or candidate["time_minutes"] < candidates[key]["time_minutes"]:

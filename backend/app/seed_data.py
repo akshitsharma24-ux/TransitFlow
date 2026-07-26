@@ -134,9 +134,20 @@ def interpolate_positions(ordered_stops, anchors):
     return positions
 
 
-def fare_slab(hop_index: int, per_hop: int, slab_size: int = 10, cap: int = 40) -> int:
-    """Rough fare-slab approximation: cost increases every `slab_size` hops, capped."""
-    return min(cap, per_hop * (1 + hop_index // slab_size))
+MINIMUM_FARE = 5  # Indian Railways/Metro minimum fare regardless of distance
+
+
+def flat_hop_fare(mode: str) -> int:
+    """
+    Realistic flat per-hop fare. Since a leg's total cost is the SUM of
+    every hop's fare (see seed loop below), this must be small enough
+    that summing many hops on a long line still lands near real fares —
+    e.g. a full Yellow Line ride (16 hops) should total roughly ₹40-50,
+    not ₹200+. A growing/slab-based per-hop cost was tried earlier and
+    is WRONG for this architecture: it compounds because costs are
+    summed across hops, not looked up once for the whole trip.
+    """
+    return {"train": 2, "metro": 3}[mode]
 
 
 STATIONS = {}
@@ -151,14 +162,13 @@ for line_name, stops, mode in LINES:
         STATIONS.setdefault(sid, {"name": name, "lat": lat, "lon": lon})
 
     per_hop_time = 3 if mode == "train" else 2
-    per_hop_cost = 5 if mode == "train" else 10
     comfort = {"train": 2, "metro": 4}[mode]
     if line_name == "Aqua Line":
         comfort = 4.5  # newest, least crowded of the three metro lines
 
     for i in range(len(stops) - 1):
         (from_id, _), (to_id, _) = stops[i], stops[i + 1]
-        cost = fare_slab(i, per_hop_cost)
+        cost = flat_hop_fare(mode)
         RAW_EDGES.append((from_id, to_id, mode, line_name, per_hop_time, cost, comfort))
 
 # --- Bus and road data (unchanged core corridor from Day 4, ids still match) ---

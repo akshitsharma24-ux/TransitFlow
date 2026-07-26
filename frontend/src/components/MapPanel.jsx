@@ -1,126 +1,211 @@
-/*
-  MapPanel — Day 8 rewrite.
+import React, { useEffect, useMemo } from 'react';
+import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { getLineConfig } from '../utils/lineColors';
 
-  Fixes from feedback:
-  1. Each LEG of the route now draws in its own line color (matching
-     RouteCard), instead of one flat navy line for the whole trip.
-     Walk/transfer legs draw as a dashed grey line.
-  2. Markers only appear at journey start, journey end, and transfer
-     points — not at every single intermediate station the route passes
-     through. Intermediate stations still shape the polyline correctly,
-     they just don't get their own pin.
-  3. The jarring zoom in/out is fixed by using Leaflet's fitBounds with
-     padding instead of a fixed zoom level, only recalculated when the
-     selected route actually changes (not on every re-render).
-*/
-
-import { useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
-import L from "leaflet";
-
+// Fix default Leaflet icon paths in React environment
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-const MUMBAI_CENTER = [19.076, 72.8777];
-
-const LINE_COLORS = {
-  "Western Line": "#1F7A5C",
-  "Yellow Line": "#B8860B",
-  "Red Line": "#A6303A",
-  "Aqua Line": "#2A4B8D",
-};
-
-function colorForLeg(leg) {
-  if (leg.line && LINE_COLORS[leg.line]) return LINE_COLORS[leg.line];
-  if (leg.mode === "bus") return "#E8A33D";
-  if (leg.mode === "road") return "#B8461F";
-  return "#14213D";
+// Custom HTML Pin icon creator
+function createCustomPin(color, labelText, isOriginOrDest = false) {
+  const size = isOriginOrDest ? 32 : 24;
+  return L.divIcon({
+    className: 'custom-map-marker',
+    html: `
+      <div style="
+        background-color: ${color};
+        width: ${size}px;
+        height: ${size}px;
+        border-radius: 50%;
+        border: 3px solid #0f172a;
+        box-shadow: 0 0 12px ${color}80;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #0f172a;
+        font-weight: bold;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: ${isOriginOrDest ? '12px' : '10px'};
+      ">
+        ${labelText || ''}
+      </div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
 }
 
-/** Recalculates map bounds only when the route actually changes, with padding, no jarring snap. */
-function FitBounds({ route }) {
+// Map Controller component to handle smooth flyTo / fitBounds & resize invalidation
+function MapFlyController({ bounds }) {
   const map = useMap();
 
   useEffect(() => {
-    if (!route || !route.legs?.length) return;
+    // Invalidate map size to fix zero-dimension initialization in Framer Motion / flex containers
+    const resizeTimer = setTimeout(() => {
+      map.invalidateSize();
+    }, 250);
 
-    const points = [];
-    route.legs.forEach((leg) => {
-      points.push([leg.from_station.lat, leg.from_station.lon]);
-      points.push([leg.to_station.lat, leg.to_station.lon]);
-    });
-
-    if (points.length === 0) return;
-
-    const bounds = L.latLngBounds(points);
-    map.flyToBounds(bounds, { padding: [48, 48], maxZoom: 15, duration: 0.6 });
-  }, [route, map]);
+    if (bounds && bounds.length > 0) {
+      map.fitBounds(bounds, {
+        padding: [50, 50],
+        maxZoom: 15,
+        animate: true,
+        duration: 1.2,
+      });
+    }
+    return () => clearTimeout(resizeTimer);
+  }, [bounds, map]);
 
   return null;
 }
 
-export default function MapPanel({ route }) {
-  // Markers only at leg boundaries (journey start/end + transfer points),
-  // deduplicated so a shared station between two legs gets one pin.
-  const markerStations = [];
-  if (route?.legs?.length) {
-    const seen = new Set();
-    route.legs.forEach((leg, i) => {
-      [leg.from_station, leg.to_station].forEach((st, j) => {
-        // Only mark: very first station, very last station, or transfer points
-        const isFirst = i === 0 && j === 0;
-        const isLast = i === route.legs.length - 1 && j === 1;
-        const isTransferPoint = j === 1 && i < route.legs.length - 1; // end of a non-final leg = a transfer
+export default function MapPanel({ selectedOption, stationsMap = {} }) {
+  // Default bounds around Mumbai center (Andheri / BKC)
+  const defaultCenter = [19.076, 72.8777];
 
-        if ((isFirst || isLast || isTransferPoint) && !seen.has(st.id)) {
-          seen.add(st.id);
-          markerStations.push(st);
+  const legs = selectedOption?.legs || [];
+
+  // Prepare polylines & key station markers
+  const { polylineLegs, markers, bounds } = useMemo(() => {
+    const polyLegs = [];
+    const keyMarkersMap = new Map(); // key -> { lat, lon, name, line, isStart, isEnd }
+    const allCoords = [];
+
+    if (!legs || legs.length === 0) {
+      return { polylineLegs: [], markers: [], bounds: [] };
+    }
+
+    legs.forEach((leg, idx) => {
+      const fromSt = leg.from_station;
+      const toSt = leg.to_station;
+
+      if (fromSt && toSt) {
+        const p1 = [fromSt.lat, fromSt.lon];
+        const p2 = [toSt.lat, toSt.lon];
+        allCoords.push(p1, p2);
+
+        const config = getLineConfig(leg.line, leg.mode);
+
+        polyLegs.push({
+          positions: [p1, p2],
+          color: config.color,
+          isWalk: leg.type === 'walk',
+          legInfo: leg,
+        });
+
+        // Add start marker for leg
+        if (idx === 0) {
+          keyMarkersMap.set(fromSt.id || fromSt.name, {
+            ...fromSt,
+            label: 'A',
+            role: 'Origin',
+            color: '#10b981',
+            isOriginOrDest: true,
+          });
+        } else {
+          // Transfer station
+          if (!keyMarkersMap.has(fromSt.id || fromSt.name)) {
+            keyMarkersMap.set(fromSt.id || fromSt.name, {
+              ...fromSt,
+              label: '⇄',
+              role: 'Transfer',
+              color: '#f59e0b',
+              isOriginOrDest: false,
+            });
+          }
         }
-      });
+
+        // Add destination marker for last leg
+        if (idx === legs.length - 1) {
+          keyMarkersMap.set(toSt.id || toSt.name, {
+            ...toSt,
+            label: 'B',
+            role: 'Destination',
+            color: '#ef4444',
+            isOriginOrDest: true,
+          });
+        }
+      }
     });
-  }
+
+    return {
+      polylineLegs: polyLegs,
+      markers: Array.from(keyMarkersMap.values()),
+      bounds: allCoords.length > 0 ? L.latLngBounds(allCoords) : null,
+    };
+  }, [legs]);
 
   return (
-    <div className="rounded-2xl overflow-hidden border border-ink/10 shadow-sm h-full min-h-[420px]">
+    <div className="relative w-full h-[380px] lg:h-full min-h-[380px] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
       <MapContainer
-        center={MUMBAI_CENTER}
+        center={defaultCenter}
         zoom={11}
-        scrollWheelZoom
-        className="h-full w-full"
+        scrollWheelZoom={true}
+        className="dark-tiles w-full h-full"
+        style={{ height: '100%', width: '100%', minHeight: '380px' }}
       >
         <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="&copy; OpenStreetMap contributors"
+          attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          maxZoom={19}
         />
 
-        <FitBounds route={route} />
-
-        {route?.legs?.map((leg, i) => (
+        {/* Polylines for each leg */}
+        {polylineLegs.map((leg, i) => (
           <Polyline
             key={i}
-            positions={[
-              [leg.from_station.lat, leg.from_station.lon],
-              [leg.to_station.lat, leg.to_station.lon],
-            ]}
-            pathOptions={
-              leg.type === "walk"
-                ? { color: "#666666", weight: 3, dashArray: "6 6" }
-                : { color: colorForLeg(leg), weight: 5 }
-            }
+            positions={leg.positions}
+            pathOptions={{
+              color: leg.color,
+              weight: leg.isWalk ? 4 : 6,
+              opacity: 0.9,
+              dashArray: leg.isWalk ? '6, 10' : undefined,
+              lineCap: 'round',
+            }}
           />
         ))}
 
-        {markerStations.map((s) => (
-          <Marker key={s.id} position={[s.lat, s.lon]}>
-            <Popup>{s.name}</Popup>
+        {/* Markers for Key Stations (Start, Transfer, End) */}
+        {markers.map((m, i) => (
+          <Marker
+            key={i}
+            position={[m.lat, m.lon]}
+            icon={createCustomPin(m.color, m.label, m.isOriginOrDest)}
+          >
+            <Popup>
+              <div className="font-sans space-y-1 p-1">
+                <div className="text-xs font-mono font-bold uppercase text-slate-400">
+                  {m.role}
+                </div>
+                <div className="text-sm font-bold text-slate-100">{m.name}</div>
+                <div className="text-xs text-slate-400 font-mono">
+                  {m.lat.toFixed(4)}, {m.lon.toFixed(4)}
+                </div>
+              </div>
+            </Popup>
           </Marker>
         ))}
+
+        {/* Fly to bounds controller */}
+        {bounds && <MapFlyController bounds={bounds} />}
       </MapContainer>
+
+      {/* Map Legend Overlay */}
+      <div className="absolute bottom-3 left-3 z-[400] glass-panel px-3 py-2 rounded-xl text-xs font-mono text-slate-300 border border-slate-700/80 shadow-lg space-y-1">
+        <div className="text-[10px] text-slate-400 uppercase font-semibold">Line Legend</div>
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-400" /> Western</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-400" /> Yellow</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-400" /> Red</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-cyan-400" /> Aqua</span>
+        </div>
+      </div>
     </div>
   );
 }

@@ -62,6 +62,7 @@ class Leg(BaseModel):
     from_station: StationPoint
     to_station: StationPoint
     time_minutes: int
+    cost_rupees: int           # 0 for walk legs
 
 
 class FarePassInsight(BaseModel):
@@ -115,6 +116,7 @@ def build_legs(raw_legs: list[dict]) -> list[Leg]:
             from_station=station_point(leg["from_station"]),
             to_station=station_point(leg["to_station"]),
             time_minutes=leg["time_minutes"],
+            cost_rupees=leg["cost_rupees"],
         )
         for leg in raw_legs
     ]
@@ -129,7 +131,7 @@ def mode_sequence_label(legs: list[dict]) -> str:
         label = leg_label(leg)
         if label not in labels:
             labels.append(label)
-    return " + ".join(labels) if labels else "Route"
+    return " + ".join(labels) if labels else "Walk"
 
 
 def describe_route(route: dict, is_raining: bool) -> str:

@@ -4,9 +4,38 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
+:root {
   font-family: 'Inter', sans-serif;
-  background-color: #F4F6F5;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  color: #F2F5F7;
+  background-color: #0B1622;
+  background-image: 
+    radial-gradient(ellipse at 50% 0%, rgba(63, 207, 224, 0.08) 0%, transparent 60%),
+    radial-gradient(rgba(255, 255, 255, 0.03) 1.2px, transparent 1.2px),
+    linear-gradient(to bottom, #0B1622 0%, #101B28 50%, #08101A 100%);
+  background-size: 100% 100%, 24px 24px, 100% 100%;
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, .font-display {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.font-mono, .departure-num {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* Glass panel themed around futuristic metro tunnel aesthetic */
+.glass-panel {
+  background: rgba(16, 27, 40, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(63, 207, 224, 0.12);
 }
 
 /* Respect reduced-motion preference */
