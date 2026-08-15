@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*$py.class
+backend/venv/
+backend/*.egg-info/
+.pytest_cache/
+
+# Node (frontend / frontend_new also have their own, this is a backstop)
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Large local-only artifacts — never commit these (GitHub hard-rejects
+# files over 100MB, and a project archive doesn't belong in source control
+# anyway; keep backups outside the repo).
+project.zip
+*.zip
+
+# Stale/dead database snapshot — the real one is regenerated via
+# `python -m app.seed_data`, this is a leftover from an earlier pass.
+backend/transitflow_old.db
