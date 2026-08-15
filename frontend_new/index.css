@@ -1,0 +1,98 @@
+@import 'maplibre-gl/dist/maplibre-gl.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #10151f;
+    @apply text-slate-100 font-body antialiased min-h-screen overflow-x-hidden;
+  }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0d121c;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e283d;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2b3854;
+}
+
+/* Deep Glassmorphism utility */
+.glass-panel {
+  background: rgba(21, 27, 43, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.glass-card {
+  background: rgba(26, 34, 54, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glass-card-hover:hover {
+  background: rgba(33, 44, 69, 0.85);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Skeleton shimmer background */
+.shimmer-bg {
+  background: linear-gradient(
+    90deg,
+    rgba(26, 34, 54, 0.6) 0%,
+    rgba(40, 52, 82, 0.8) 50%,
+    rgba(26, 34, 54, 0.6) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* MapLibre GL Map styling overrides for dark theme */
+.maplibregl-map {
+  width: 100%;
+  height: 100%;
+  font-family: 'Inter', sans-serif !important;
+}
+
+.maplibregl-popup-content {
+  background: #101B28 !important;
+  color: #F2F5F7 !important;
+  border: 1px solid rgba(63, 207, 224, 0.3) !important;
+  border-radius: 12px !important;
+  padding: 8px 12px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7) !important;
+}
+.maplibregl-popup-tip {
+  border-top-color: #101B28 !important;
+  border-bottom-color: #101B28 !important;
+}
+.maplibregl-popup-close-button {
+  color: #94a3b8 !important;
+  font-size: 14px !important;
+  padding: 2px 6px !important;
+}
+
+.departure-num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}

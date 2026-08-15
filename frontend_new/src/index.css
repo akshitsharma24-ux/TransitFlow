@@ -1,0 +1,110 @@
+@import 'maplibre-gl/dist/maplibre-gl.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: #E7E9E4;
+    color: #1C1B17;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    letter-spacing: 0.01em;
+  }
+
+  ::selection {
+    background: #E8A33D;
+    color: #14120D;
+  }
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Unlit dot-matrix cell grid — the texture that makes the board read as a
+   real physical display rather than a flat dark panel with glowing text. */
+.dot-grid {
+  background-image: radial-gradient(circle, #39352A 1px, transparent 1px);
+  background-size: 5px 5px;
+}
+.dot-grid-amber {
+  background-image: radial-gradient(circle, rgba(232,163,61,0.16) 1px, transparent 1px);
+  background-size: 5px 5px;
+}
+
+/* Simulated LED glow — restrained, not a neon halo */
+.led-text {
+  color: #E8A33D;
+  text-shadow: 0 0 1px rgba(232,163,61,0.55);
+}
+.led-text-dim {
+  color: #6B5628;
+}
+
+/* Board casing rivet */
+.rivet {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 30%, #5A5648, #100E0A 70%);
+}
+
+/* Skeleton shimmer, industrial tone */
+.shimmer-bg {
+  background: linear-gradient(90deg, #DCDED6 0%, #EDEEE8 50%, #DCDED6 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite;
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes flicker-in {
+  0% { opacity: 0; }
+  35% { opacity: 0.55; }
+  50% { opacity: 0.15; }
+  70% { opacity: 0.85; }
+  100% { opacity: 1; }
+}
+.flicker-in {
+  animation: flicker-in 0.5s steps(6, end);
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #E7E9E4; }
+::-webkit-scrollbar-thumb { background: #C7C9BE; border-radius: 0; border: 2px solid #E7E9E4; }
+::-webkit-scrollbar-thumb:hover { background: #ADB0A2; }
+
+.maplibregl-map { font-family: 'IBM Plex Sans', sans-serif !important; }
+.maplibregl-popup-content {
+  background: #F6F7F2 !important;
+  color: #1C1B17 !important;
+  border: 1px solid #D3D2C7 !important;
+  border-radius: 2px !important;
+  padding: 9px 13px !important;
+  box-shadow: 2px 2px 0 0 rgba(28,27,23,0.15) !important;
+}
+.maplibregl-popup-tip { border-top-color: #F6F7F2 !important; border-bottom-color: #F6F7F2 !important; }
+.maplibregl-popup-close-button { color: #848175 !important; font-size: 15px !important; padding: 2px 7px !important; }
+.maplibregl-ctrl-group {
+  border-radius: 2px !important;
+  overflow: hidden;
+  box-shadow: 2px 2px 0 0 rgba(28,27,23,0.12) !important;
+  border: 1px solid #D3D2C7 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
