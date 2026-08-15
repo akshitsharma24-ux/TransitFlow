@@ -1,5 +1,5 @@
 """
-TransitFlow — Backend (Day 7)
+TransitFlow — Backend (Day 9)
 
 New in this version:
 - RouteOption now includes `legs`: an ordered list of ride/walk steps,
@@ -10,6 +10,13 @@ New in this version:
     Yellow Line: Andheri West -> Dahanukarwadi (22 min)
 - mode label now uses real line names (e.g. "Yellow Line") instead of
   the generic "Metro" when available.
+- routing_engine now runs Yen's k-shortest-paths per objective instead of
+  one plain-Dijkstra path, so two routes CAN legitimately share the same
+  mode label (e.g. "Western Line + Yellow Line") while transferring at
+  different stations. RouteOption.via names the interchange station(s)
+  so the frontend can tell them apart, and results are deduped by the
+  physical route signature (not the label) and capped at MAX_OPTIONS —
+  no more collapsing distinct alternatives down to one per label.
 
 Run it with:
     uvicorn app.main:app --reload
@@ -24,10 +31,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.routing_engine import (
-    STATION_INFO, STATION_SERVICES, MODE_LABELS, get_ranked_routes, default_hour_and_day_type, fare_pass_insight,
+    STATION_INFO, STATION_SERVICES, MODE_LABELS, get_ranked_routes, default_hour_and_day_type,
+    fare_pass_insight, predict_crowd,
 )
 
 app = FastAPI(title="TransitFlow API")
+
+# Cap on how many ranked options reach the client. explore_routes can surface
+# several genuinely distinct alternatives per mode-pair now (k-shortest
+# paths, not just one), so this bounds the response instead of a single
+# best-per-label cutoff quietly discarding the rest.
+MAX_OPTIONS = 6
 
 app.add_middleware(
     CORSMiddleware,
@@ -71,6 +85,21 @@ class FarePassInsight(BaseModel):
     breakeven_commute_days: float
 
 
+class HourCrowd(BaseModel):
+    hour: int
+    score: float
+    level: str
+
+
+class CrowdForecast(BaseModel):
+    level: str          # "Comfortable" | "Moderate" | "Busy" | "Packed"
+    score: float        # 0-1
+    driver: str         # the line/mode this forecast is driven by
+    hour: int
+    day_type: str
+    hourly: list[HourCrowd] = []
+
+
 class RouteOption(BaseModel):
     mode: str
     time_minutes: int
@@ -80,6 +109,8 @@ class RouteOption(BaseModel):
     explanation: str
     path: list[StationPoint]
     legs: list[Leg]
+    via: list[str] = []
+    crowd_forecast: Optional[CrowdForecast] = None
     fare_pass: Optional[FarePassInsight] = None
 
 
@@ -120,6 +151,19 @@ def build_legs(raw_legs: list[dict]) -> list[Leg]:
         )
         for leg in raw_legs
     ]
+
+
+def via_stations(legs: list[dict]) -> list[str]:
+    """Names of the interchange point(s) — where a walk leg hands off between rides."""
+    return [STATION_INFO[leg["from_station"]]["name"] for leg in legs if leg["type"] == "walk"]
+
+
+def route_signature(route: dict) -> tuple:
+    """Physical ride signature: mode/line and actual boarding/alighting stations, not just labels."""
+    return tuple(
+        (leg["mode"], leg["line"], leg["from_station"], leg["to_station"])
+        for leg in route["legs"] if leg["type"] == "ride"
+    ) or ("walk_only",)
 
 
 def mode_sequence_label(legs: list[dict]) -> str:
@@ -180,6 +224,44 @@ def list_stations():
     }
 
 
+@app.get("/network")
+def get_network():
+    """
+    Full system topology for the overview map: each named line with its
+    ordered station points and the segments between them, so the frontend
+    can draw every line at once (not just a single route).
+    """
+    from app.database import SessionLocal
+    from app.models import EdgeModel
+
+    db = SessionLocal()
+    try:
+        edges = db.query(EdgeModel).filter(EdgeModel.line.isnot(None), EdgeModel.mode != "transfer").all()
+    finally:
+        db.close()
+
+    lines = {}
+    for e in edges:
+        entry = lines.setdefault(e.line, {"mode": e.mode, "segments": [], "_seen": set(), "_stations": {}})
+        seg_key = tuple(sorted((e.from_station_id, e.to_station_id)))
+        if seg_key not in entry["_seen"]:
+            entry["_seen"].add(seg_key)
+            a, b = STATION_INFO[e.from_station_id], STATION_INFO[e.to_station_id]
+            entry["segments"].append([[a["lon"], a["lat"]], [b["lon"], b["lat"]]])
+        for sid in (e.from_station_id, e.to_station_id):
+            if sid not in entry["_stations"]:
+                s = STATION_INFO[sid]
+                entry["_stations"][sid] = {"id": sid, "name": s["name"], "lat": s["lat"], "lon": s["lon"]}
+
+    return {
+        "lines": {
+            line: {"mode": data["mode"], "segments": data["segments"],
+                   "stations": list(data["_stations"].values())}
+            for line, data in lines.items()
+        }
+    }
+
+
 @app.post("/route", response_model=RouteResponse)
 def get_routes(request: RouteRequest):
     origin = request.origin.lower()
@@ -201,14 +283,19 @@ def get_routes(request: RouteRequest):
     if not ranked:
         raise HTTPException(status_code=404, detail="No routes found between these stations.")
 
-    # Dedupe by display label, keeping the best-scoring (ranked is already sorted)
-    seen_labels = set()
+    # Dedupe by physical route signature (not display label) — routing_engine
+    # already guarantees this upstream, but stays defensive here since two
+    # equally-good signatures can otherwise both survive scoring ties.
+    # Distinct interchange alternatives (e.g. via Andheri vs. via Malad) can
+    # share a label; that's fine, `via` disambiguates them for the frontend.
+    seen_signatures = set()
     deduped_ranked = []
     for r in ranked:
-        label = mode_sequence_label(r["legs"])
-        if label not in seen_labels:
-            seen_labels.add(label)
+        signature = route_signature(r)
+        if signature not in seen_signatures:
+            seen_signatures.add(signature)
             deduped_ranked.append(r)
+    deduped_ranked = deduped_ranked[:MAX_OPTIONS]
 
     options = [
         RouteOption(
@@ -220,6 +307,8 @@ def get_routes(request: RouteRequest):
             explanation=describe_route(r, request.is_raining),
             path=[station_point(sid) for sid in r["station_path"]],
             legs=build_legs(r["legs"]),
+            via=via_stations(r["legs"]),
+            crowd_forecast=CrowdForecast(**predict_crowd(r["legs"], hour, day_type)),
             fare_pass=fare_pass_insight(r["modes"], r["cost_rupees"]),
         )
         for r in deduped_ranked

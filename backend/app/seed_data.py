@@ -68,6 +68,17 @@ RED_LINE = [  # Metro Line 7: Dahisar East -> Gundavali (Andheri East). Shares d
     ("jogeshwari_e", "Jogeshwari East"), ("shankarwadi", "Shankarwadi"), ("gundavali", "Gundavali (Andheri East)"),
 ]
 
+CENTRAL_LINE = [  # Central Railway main line: CSMT -> Kalyan (26 stations)
+    ("csmt", "CSMT"), ("masjid", "Masjid"), ("sandhurst_road", "Sandhurst Road"),
+    ("byculla", "Byculla"), ("chinchpokli", "Chinchpokli"), ("currey_road", "Currey Road"),
+    ("parel_central", "Parel"), ("dadar_central", "Dadar (Central)"), ("matunga", "Matunga"),
+    ("sion", "Sion"), ("kurla", "Kurla"), ("vidyavihar", "Vidyavihar"), ("ghatkopar", "Ghatkopar"),
+    ("vikhroli", "Vikhroli"), ("kanjurmarg", "Kanjurmarg"), ("bhandup", "Bhandup"),
+    ("nahur", "Nahur"), ("mulund", "Mulund"), ("thane", "Thane"), ("kalva", "Kalva"),
+    ("mumbra", "Mumbra"), ("diva", "Diva"), ("kopar", "Kopar"), ("dombivli", "Dombivli"),
+    ("thakurli", "Thakurli"), ("kalyan", "Kalyan"),
+]
+
 AQUA_LINE = [  # Metro Line 3: Cuffe Parade -> Aarey JVLR (fully underground except the last station)
     ("cuffe_parade", "Cuffe Parade"), ("vidhan_bhavan", "Vidhan Bhavan"), ("churchgate_metro", "Churchgate (Metro)"),
     ("hutatma_chowk", "Hutatma Chowk"), ("csmt_metro", "CSMT (Metro)"), ("kalbadevi", "Kalbadevi"),
@@ -82,6 +93,7 @@ AQUA_LINE = [  # Metro Line 3: Cuffe Parade -> Aarey JVLR (fully underground exc
 
 LINES = [
     ("Western Line", WESTERN_LINE, "train"),
+    ("Central Line", CENTRAL_LINE, "train"),
     ("Yellow Line", YELLOW_LINE, "metro"),
     ("Red Line", RED_LINE, "metro"),
     ("Aqua Line", AQUA_LINE, "metro"),
@@ -94,6 +106,11 @@ ANCHORS = {
         "churchgate": (18.9354, 72.8276), "dadar": (19.0178, 72.8478), "bandra": (19.0596, 72.8295),
         "andheri": (19.1197, 72.8468), "goregaon": (19.1653, 72.8494), "malad": (19.1863, 72.8484),
         "borivali": (19.2307, 72.8567), "dahisar": (19.2544, 72.8567), "virar": (19.4550, 72.8110),
+    },
+    "Central Line": {
+        "csmt": (18.9398, 72.8355), "byculla": (18.9765, 72.8328), "dadar_central": (19.0186, 72.8443),
+        "kurla": (19.0653, 72.8790), "ghatkopar": (19.0860, 72.9085), "mulund": (19.1726, 72.9564),
+        "thane": (19.1860, 72.9757), "dombivli": (19.2144, 73.0868), "kalyan": (19.2450, 73.1300),
     },
     "Yellow Line": {
         "dahisar_east": (19.2511, 72.8670), "dahanukarwadi": (19.2062, 72.8347),
@@ -210,14 +227,40 @@ INTERCHANGES = [
     ("malad", "malad_west", 7),
     ("borivali", "borivali_west", 7),
     ("aarey", "aarey_jvlr", 8),
+
+    # Central Line interchanges into the existing network
+    ("dadar_central", "dadar", 4),          # Western <-> Central, Mumbai's busiest interchange
+    ("dadar_central", "dadar_metro", 8),    # Central <-> Aqua Line at Dadar
+    ("csmt", "csmt_metro", 5),              # Central rail terminus <-> Aqua Line CSMT
+    ("matunga", "matunga_road", 9),         # Central Matunga <-> Western Matunga Road
+]
+
+# One row per (mode, hour, day_type): a 0-1 "how full is a typical
+# commute rhythm at this hour" factor — smooth and double-peaked (morning
+# ~9am, evening ~6pm, evening the fuller of the two, matching the common
+# lived experience that the return commute runs fuller/longer) rather than
+# a flat bump only inside two rush-hour blocks. routing_engine.py scales
+# this factor into each line/mode's own min..max crowd range, so the same
+# curve shape produces a gentler result on a newer metro line than on a
+# packed suburban local.
+WEEKDAY_HOURLY_FACTOR = [
+    0.05, 0.03, 0.02, 0.02, 0.05, 0.12, 0.25, 0.45,
+    0.68, 0.85, 0.72, 0.45, 0.35, 0.32, 0.30, 0.35,
+    0.48, 0.72, 0.92, 0.88, 0.62, 0.40, 0.22, 0.10,
+]
+# Weekend: one gentle midday bump (leisure/shopping travel), no sharp
+# commute peaks.
+WEEKEND_HOURLY_FACTOR = [
+    0.05, 0.03, 0.02, 0.02, 0.03, 0.06, 0.10, 0.15,
+    0.22, 0.32, 0.42, 0.48, 0.52, 0.55, 0.52, 0.48,
+    0.45, 0.42, 0.40, 0.35, 0.28, 0.20, 0.12, 0.07,
 ]
 
 CROWDING_RULES = [
-    ("train", 8, 11, "weekday", 0.35),
-    ("train", 18, 21, "weekday", 0.35),
-    ("bus", 8, 11, "weekday", 0.15),
-    ("bus", 18, 21, "weekday", 0.15),
-    ("metro", 8, 10, "weekday", 0.10),
+    (mode, hour, hour + 1, day_type, factor)
+    for mode in ("train", "metro", "bus")
+    for day_type, curve in (("weekday", WEEKDAY_HOURLY_FACTOR), ("weekend", WEEKEND_HOURLY_FACTOR))
+    for hour, factor in enumerate(curve)
 ]
 
 
