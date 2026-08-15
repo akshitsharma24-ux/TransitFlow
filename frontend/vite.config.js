@@ -3,6 +3,16 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  // maplibre-gl loads its tile-decoding worker via a dynamically constructed
+  // Worker URL. Vite's esbuild-based dep pre-bundler doesn't follow that
+  // pattern correctly, so the prebundled copy ends up requesting a
+  // "maplibre-gl-worker.mjs" that was never emitted (404 at runtime) — the
+  // map's sources then never finish loading. Excluding it from
+  // optimizeDeps makes Vite serve it as real ESM instead, which resolves
+  // the worker correctly.
+  optimizeDeps: {
+    exclude: ['maplibre-gl'],
+  },
   plugins: [
     react(),
     VitePWA({

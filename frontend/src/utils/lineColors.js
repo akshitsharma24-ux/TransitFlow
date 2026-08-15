@@ -35,6 +35,16 @@ export const LINE_CONFIGS = {
     ticket: OFFICIAL_TICKET_LINKS.train,
     icon: Train,
   },
+  'Central Line': {
+    name: 'Central Line',
+    mode: 'train',
+    color: '#7D5BA6', // Central Railway — jewel violet, distinct from every other line
+    bgClass: 'bg-[#7D5BA6]/15 text-[#a986d4] border-[#7D5BA6]/40',
+    badgeClass: 'bg-[#7D5BA6] text-slate-100 font-bold',
+    accentBorder: 'border-l-[#7D5BA6]',
+    ticket: OFFICIAL_TICKET_LINKS.train,
+    icon: Train,
+  },
   'Yellow Line': {
     name: 'Yellow Line',
     mode: 'metro',
@@ -120,6 +130,20 @@ export function getLineConfig(lineName, modeName) {
     ticket: null,
     icon: Train,
   };
+}
+
+/**
+ * Crowd-forecast styling per predicted level.
+ */
+export const CROWD_CONFIGS = {
+  Comfortable: { label: 'Comfortable', color: '#2D8B6F', bgClass: 'bg-[#2D8B6F]/15 text-[#4bbd97] border-[#2D8B6F]/40', bars: 1 },
+  Moderate: { label: 'Moderate', color: '#C9971F', bgClass: 'bg-[#C9971F]/15 text-[#e5b138] border-[#C9971F]/40', bars: 2 },
+  Busy: { label: 'Busy', color: '#D9770B', bgClass: 'bg-[#D9770B]/15 text-[#f0912e] border-[#D9770B]/40', bars: 3 },
+  Packed: { label: 'Packed', color: '#B33A44', bgClass: 'bg-[#B33A44]/15 text-[#d95561] border-[#B33A44]/40', bars: 4 },
+};
+
+export function getCrowdConfig(level) {
+  return CROWD_CONFIGS[level] || CROWD_CONFIGS.Moderate;
 }
 
 /**

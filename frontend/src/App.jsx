@@ -1,12 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Train, Sparkles, TrainFront } from 'lucide-react';
+import { TrainFront, Sparkles, MapPin, Search } from 'lucide-react';
 import { fetchStations, calculateRoute } from './api';
 import SearchBoard from './components/SearchBoard';
 import BentoResultsGrid from './components/BentoResultsGrid';
+import StatsStrip from './components/StatsStrip';
+import FeaturesSection from './components/FeaturesSection';
 import { LoadingSkeleton, EmptyState, ErrorState } from './components/StatusStates';
 import SplashScreen from './components/SplashScreen';
 import HeroCanvasAnimation from './components/HeroCanvasAnimation';
+import HowItWorksSection from './components/HowItWorksSection';
+import CommandPalette from './components/CommandPalette';
+import ScrollProgressBar from './components/ScrollProgressBar';
+import NetworkMap from './components/NetworkMap';
+import useLenis from './hooks/useLenis';
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -33,6 +40,10 @@ export default function App() {
   const [isLocationLoading, setIsLocationLoading] = useState(false);
   const [locationError, setLocationError] = useState(null);
 
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+
+  const lenisRef = useLenis();
+
   const [savedRoutes, setSavedRoutes] = useState(() => {
     try {
       const saved = localStorage.getItem('transitflow_saved_routes');
@@ -53,6 +64,24 @@ export default function App() {
       return [];
     }
   });
+
+  const resultsRef = useRef(null);
+
+  // Shareable routes: a pasted ?from=&to=&priority=&rain= link pre-fills the
+  // form before the first search fires, and every search afterwards keeps
+  // the URL in sync (see handleSearch) so the address bar is always a valid
+  // link back to what's on screen.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const from = params.get('from');
+    const to = params.get('to');
+    const p = params.get('priority');
+    const rain = params.get('rain');
+    if (from) setOrigin(from);
+    if (to) setDestination(to);
+    if (p) setPriority(p);
+    if (rain != null) setIsRaining(rain === '1');
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -79,16 +108,16 @@ export default function App() {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        const input = document.querySelector('input[type="text"]');
-        if (input) input.focus();
+        setIsPaletteOpen(true);
       } else if (e.key === 'Escape') {
+        if (isPaletteOpen) return; // palette closes itself on Escape
         setRouteData(null);
         setRouteError(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isPaletteOpen]);
 
   const handleSearch = async (overrideOrigin, overrideDest) => {
     const targetOrigin = overrideOrigin || origin;
@@ -113,6 +142,13 @@ export default function App() {
       setRouteData(res);
       setSelectedRouteIndex(0);
 
+      const shareParams = new URLSearchParams();
+      shareParams.set('from', targetOrigin);
+      shareParams.set('to', targetDest);
+      shareParams.set('priority', priority);
+      if (isRaining) shareParams.set('rain', '1');
+      window.history.replaceState(null, '', `?${shareParams.toString()}`);
+
       setRecentSearches((prev) => {
         const filtered = prev.filter(
           (r) => !(r.origin === targetOrigin && r.destination === targetDest)
@@ -121,6 +157,16 @@ export default function App() {
         localStorage.setItem('transitflow_recent_searches', JSON.stringify(updated));
         return updated;
       });
+
+      // Smooth scroll down to results workspace (through Lenis when active)
+      setTimeout(() => {
+        if (!resultsRef.current) return;
+        if (lenisRef.current) {
+          lenisRef.current.scrollTo(resultsRef.current, { offset: -90, duration: 1.2 });
+        } else {
+          resultsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 100);
     } catch (err) {
       console.error('Route calculation error:', err);
       setRouteError(err.message || 'Route calculation failed');
@@ -131,7 +177,9 @@ export default function App() {
 
   useEffect(() => {
     if (!isStationsLoading && !stationsError && Object.keys(stationsMap).length > 0) {
-      handleSearch('churchgate', 'dahanukarwadi');
+      // No args: picks up whatever origin/destination are already in state —
+      // either the defaults, or a shareable-link override applied on mount.
+      handleSearch();
     }
   }, [isStationsLoading, stationsError]);
 
@@ -167,56 +215,75 @@ export default function App() {
     localStorage.removeItem('transitflow_recent_searches');
   };
 
-  const searchBoardRef = useRef(null);
-
-  const handleScrollToSearch = () => {
-    if (searchBoardRef.current) {
-      searchBoardRef.current.scrollIntoView({ behavior: 'smooth' });
+  const handlePaletteRunRoute = (o, d) => {
+    if (d) {
+      setOrigin(o);
+      setDestination(d);
+      handleSearch(o, d);
+    } else {
+      setOrigin(o);
     }
   };
+
+  const handlePaletteToggleRain = () => setIsRaining((prev) => !prev);
 
   const options = routeData?.options || [];
 
   return (
-    <div className="min-h-screen bg-transparent text-[#F2F5F7] flex flex-col font-sans antialiased selection:bg-[#3FCFE0] selection:text-[#0B1622]">
-      {/* 1.5s Session-Based Animated Intro Splash Screen */}
+    <div className="min-h-screen bg-[#0B1622] text-[#F2F5F7] flex flex-col font-sans antialiased selection:bg-[#3FCFE0] selection:text-[#0B1622]">
+      <ScrollProgressBar />
+
+      {/* 1.5s Session-Based Intro Splash Screen */}
       <SplashScreen onComplete={() => setShowSplash(false)} />
 
-      {/* Navigation Header */}
-      <header className="sticky top-0 z-50 glass-panel border-b border-[#3FCFE0]/20 px-4 lg:px-8 py-3 flex items-center justify-between shadow-lg">
+      <CommandPalette
+        isOpen={isPaletteOpen}
+        onClose={() => setIsPaletteOpen(false)}
+        stationsMap={stationsMap}
+        savedRoutes={savedRoutes}
+        recentSearches={recentSearches}
+        onRunRoute={handlePaletteRunRoute}
+        onSetPriority={setPriority}
+        onToggleRain={handlePaletteToggleRain}
+        isRaining={isRaining}
+      />
+
+      {/* Header Navigation Bar */}
+      <header className="sticky top-0 z-50 glass-panel border-b border-[#3FCFE0]/20 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-xl bg-[#0B1622]/90 backdrop-blur-xl">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#3FCFE0] to-[#4DD9E8] text-[#0B1622] flex items-center justify-center font-bold shadow-[0_0_15px_rgba(63,207,224,0.4)]">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#3FCFE0] via-[#4DD9E8] to-[#E8A94D] text-[#0B1622] flex items-center justify-center font-bold shadow-[0_0_15px_rgba(63,207,224,0.4)]">
             <TrainFront className="w-5 h-5" />
           </div>
           <div>
-            <span className="font-display font-bold text-lg text-[#F2F5F7] tracking-tight flex items-center gap-2">
+            <span className="font-display font-extrabold text-lg text-[#F2F5F7] tracking-tight flex items-center gap-2">
               TransitFlow
               <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-[#3FCFE0]/15 text-[#3FCFE0] border border-[#3FCFE0]/30">
-                Metro 2026
+                2026 Router
               </span>
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 font-mono text-xs text-slate-300">
-          <div className="hidden md:flex items-center gap-2 bg-[#101B28]/90 px-3 py-1.5 rounded-xl border border-[#3FCFE0]/20">
+        <div className="flex items-center gap-4 font-mono text-xs text-slate-300">
+          <div className="hidden sm:flex items-center gap-2 bg-[#101B28] px-3.5 py-1.5 rounded-xl border border-[#3FCFE0]/25 shadow-inner">
             <span className="w-2 h-2 rounded-full bg-[#3FCFE0] animate-pulse" />
             <span>FastAPI Dijkstra Active</span>
           </div>
 
-          <kbd className="hidden lg:inline-flex items-center gap-1 bg-[#101B28] border border-slate-700 px-2 py-1 rounded text-[11px] text-slate-400">
+          <kbd
+            onClick={() => setIsPaletteOpen(true)}
+            className="hidden lg:inline-flex items-center gap-1 bg-[#101B28] border border-slate-700 px-2.5 py-1 rounded-lg text-[11px] text-slate-400 cursor-pointer hover:border-[#3FCFE0]/50 hover:text-[#3FCFE0] transition-colors"
+            title="Open quick actions"
+          >
             Ctrl + K
           </kbd>
         </div>
       </header>
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 lg:p-8 space-y-12 relative z-10">
-        {/* Scroll-Scrubbed Metro Train Canvas Hero */}
-        <HeroCanvasAnimation onScrollToSearch={handleScrollToSearch} />
-
-        {/* Search Board Container Anchor */}
-        <div ref={searchBoardRef} className="pt-4 scroll-mt-20">
+      {/* Main Page Layout Container */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 space-y-16 relative z-10">
+        {/* 1. Cinematic Moving-Metro Hero with Embedded Floating Search Board */}
+        <HeroCanvasAnimation>
           <SearchBoard
             origin={origin}
             setOrigin={setOrigin}
@@ -244,24 +311,13 @@ export default function App() {
             locationError={locationError}
             setLocationError={setLocationError}
           />
-        </div>
+        </HeroCanvasAnimation>
 
-        {/* Results Workspace */}
-        <div className="space-y-4">
-          {routeData && (
-            <div className="flex items-center justify-between pb-2 border-b border-[#3FCFE0]/20 text-xs font-mono text-slate-400">
-              <span className="flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-[#3FCFE0]" />
-                <span>
-                  FOUND <strong className="text-[#F2F5F7]">{options.length}</strong> ROUTE OPTIONS
-                </span>
-              </span>
-              <span className="uppercase text-[11px] px-2.5 py-0.5 rounded-full bg-[#101B28] border border-[#D99A3D]/40 text-[#E8A94D] font-bold">
-                PRIORITY: {routeData.priority}
-              </span>
-            </div>
-          )}
+        {/* 2. Verified Real Stats Strip */}
+        <StatsStrip />
 
+        {/* 3. Results Workspace (Comparable List & Interactive Map) */}
+        <div ref={resultsRef} className="space-y-6 pt-4 scroll-mt-24">
           {isLoading && <LoadingSkeleton />}
 
           {routeError && (
@@ -281,7 +337,6 @@ export default function App() {
             />
           )}
 
-          {/* Bento Grid Layout */}
           {!isLoading && !routeError && options.length > 0 && (
             <BentoResultsGrid
               options={options}
@@ -289,17 +344,42 @@ export default function App() {
               onSelectOption={setSelectedRouteIndex}
               stationsMap={stationsMap}
               priority={priority}
+              routeData={routeData}
             />
           )}
         </div>
+
+        {/* 4. Full System Network Map — explore every line */}
+        <NetworkMap />
+
+        {/* 5. Real Algorithmic Features Section */}
+        <FeaturesSection />
+
+        {/* 6. Scroll-Driven Algorithm Deep-Dive (Dijkstra + Yen's, scoring, penalties) */}
+        <HowItWorksSection />
       </main>
 
-      <footer className="border-t border-[#3FCFE0]/20 py-5 px-6 text-center text-xs font-mono text-slate-400 glass-panel mt-16">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>TransitFlow 2026 Engine • Real Dijkstra Multimodal Routing</span>
-          <span className="text-slate-400">
-            Western Line • Metro Yellow • Metro Red • Metro Aqua
-          </span>
+      {/* Footer */}
+      <footer className="border-t border-[#3FCFE0]/20 py-8 px-6 text-xs font-mono text-slate-400 glass-panel mt-20 bg-[#0B1622]/95">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-slate-300 font-display font-semibold">
+            <div className="w-6 h-6 rounded-lg bg-[#3FCFE0] text-[#0B1622] flex items-center justify-center text-xs font-bold">
+              TF
+            </div>
+            <span>TransitFlow 2026 • Algorithmic Multimodal Engine</span>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-4 text-slate-400">
+            <span>Western Line</span>
+            <span>•</span>
+            <span>Central Line</span>
+            <span>•</span>
+            <span>Yellow Line 2A</span>
+            <span>•</span>
+            <span>Red Line 7</span>
+            <span>•</span>
+            <span>Aqua Line 3</span>
+          </div>
         </div>
       </footer>
     </div>

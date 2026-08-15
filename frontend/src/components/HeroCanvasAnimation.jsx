@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronDown, Sparkles, TrainFront } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Radio } from 'lucide-react';
+
+const EASE = [0.16, 1, 0.3, 1];
 
 const TOTAL_FRAMES = 270;
 const FRAME_BASE_PATH = '/ezgif-jpg/ezgif-frame-';
@@ -9,7 +12,7 @@ function getFrameUrl(index) {
   return `${FRAME_BASE_PATH}${paddedNumber}.jpg`;
 }
 
-export default function HeroCanvasAnimation({ onScrollToSearch }) {
+export default function HeroCanvasAnimation({ children }) {
   const canvasRef = useRef(null);
   const imagesRef = useRef([]);
 
@@ -65,7 +68,7 @@ export default function HeroCanvasAnimation({ onScrollToSearch }) {
     };
   }, []);
 
-  // Sync Canvas Resolution to Window Size (1:1 Native Resolution for Maximum Speed & Sharpness)
+  // Sync Canvas Resolution to Window Size
   const syncCanvasSize = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -153,7 +156,7 @@ export default function HeroCanvasAnimation({ onScrollToSearch }) {
     };
   }, [syncCanvasSize]);
 
-  // SINGLE UNIFIED 60 FPS ANIMATION LOOP (Zero jitter, smooth motion up/down & intro)
+  // SINGLE UNIFIED 60 FPS ANIMATION LOOP
   useEffect(() => {
     if (prefersReducedMotion) return;
 
@@ -174,7 +177,7 @@ export default function HeroCanvasAnimation({ onScrollToSearch }) {
         const easeProgress = 1 - Math.pow(1 - progress, 3);
         targetFrame = easeProgress * 175;
       } else {
-        // Scroll-driven scrubbing over 850px of page scrolling
+        // Scroll-driven scrubbing over page scrolling
         const scrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
         const progress = Math.max(0, Math.min(1, scrollY / 850));
         targetFrame = progress * (TOTAL_FRAMES - 1);
@@ -190,7 +193,6 @@ export default function HeroCanvasAnimation({ onScrollToSearch }) {
 
       const frameToDraw = Math.round(currentFrameRef.current);
 
-      // Draw ONLY when frame index changes to eliminate redraw stutter
       if (frameToDraw !== lastDrawnFrameRef.current) {
         renderFrame(frameToDraw);
       }
@@ -215,8 +217,8 @@ export default function HeroCanvasAnimation({ onScrollToSearch }) {
   const loadPercentage = Math.round((loadedCount / TOTAL_FRAMES) * 100);
 
   return (
-    <>
-      {/* 1. Full-Screen Fixed Background Canvas */}
+    <section className="relative min-h-[90vh] flex flex-col justify-center items-center py-8 md:py-12 overflow-visible">
+      {/* Full-Screen Fixed Background Canvas */}
       {!prefersReducedMotion && (
         <div className="fixed inset-0 w-full h-full pointer-events-none z-0 overflow-hidden">
           <canvas
@@ -224,51 +226,73 @@ export default function HeroCanvasAnimation({ onScrollToSearch }) {
             className="w-full h-full object-cover block"
           />
           {/* Dark Vignette & Gradient Overlay */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#0B1622]/60 via-[#0B1622]/85 to-[#0B1622] pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0B1622]/75 via-[#0B1622]/85 to-[#0B1622] pointer-events-none" />
         </div>
       )}
 
-      {/* 2. Hero Header Text & Action Bar */}
-      <div className="relative z-10 w-full py-12 md:py-16 flex flex-col items-center text-center space-y-6">
-        <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-[#101B28]/90 backdrop-blur-md border border-[#3FCFE0]/40 text-[#3FCFE0] font-mono text-xs shadow-xl">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#3FCFE0] animate-pulse" />
-          <span>FUTURISTIC TRANSIT CORRIDOR • METRO ARRIVAL</span>
-        </div>
+      {/* Hero Header Wordmark & Tagline */}
+      <div className="relative z-10 w-full max-w-4xl mx-auto text-center space-y-5 mb-8">
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: EASE }}
+          className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-[#101B28]/90 backdrop-blur-md border border-[#3FCFE0]/40 text-[#3FCFE0] font-mono text-xs shadow-2xl"
+        >
+          <Radio className="w-3.5 h-3.5 animate-pulse" />
+          <span>MUMBAI MULTIMODAL ROUTING ENGINE — LIVE</span>
+        </motion.div>
 
-        <h1 className="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl text-[#F2F5F7] tracking-tight leading-tight max-w-4xl drop-shadow-2xl">
-          Experience High-Frequency <br className="hidden sm:inline" />
-          <span className="bg-gradient-to-r from-[#3FCFE0] via-[#4DD9E8] to-[#E8A94D] bg-clip-text text-transparent">
-            Metro Intelligence
-          </span>
+        <h1 className="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl text-[#F2F5F7] tracking-tight leading-none drop-shadow-2xl">
+          <motion.span
+            initial={{ opacity: 0, y: '0.5em' }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.12, ease: EASE }}
+            className="inline-block"
+          >
+            Transit
+          </motion.span>
+          <motion.span
+            initial={{ opacity: 0, y: '0.5em' }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.24, ease: EASE }}
+            className="animate-gradient-text bg-gradient-to-r from-[#3FCFE0] via-[#E8A94D] to-[#7D5BA6] bg-clip-text text-transparent inline-block"
+          >
+            Flow
+          </motion.span>
         </h1>
 
-        <p className="text-base md:text-lg text-slate-200 font-sans max-w-2xl leading-relaxed drop-shadow">
-          Real-time algorithmic Dijkstra route planning connecting suburban railways with modern cyan & yellow line rapid transit corridors.
-        </p>
+        <motion.p
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.38, ease: EASE }}
+          className="text-base sm:text-lg text-slate-200 font-sans max-w-2xl mx-auto leading-relaxed drop-shadow"
+        >
+          Algorithmic route planning across Western &amp; Central rail and the Yellow, Red &amp; Aqua metros —
+          ranked by time, cost, comfort and predicted crowd.
+        </motion.p>
 
-        <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
-          <button
-            type="button"
-            onClick={onScrollToSearch}
-            className="px-6 py-3 rounded-2xl bg-gradient-to-r from-[#3FCFE0] to-[#4DD9E8] text-[#0B1622] font-bold text-sm flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all shadow-[0_0_30px_rgba(63,207,224,0.5)] cursor-pointer"
-          >
-            <span>Jump to Route Search</span>
-            <ChevronDown className="w-4 h-4" />
-          </button>
-
-          {!isFullyLoaded && (
-            <div className="flex items-center gap-3 px-4 py-2 rounded-2xl bg-[#101B28]/90 backdrop-blur-md border border-[#D99A3D]/40 text-[#E8A94D] font-mono text-xs shadow-xl">
-              <div className="w-20 h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-[#D99A3D] to-[#3FCFE0] transition-all duration-200"
-                  style={{ width: `${loadPercentage}%` }}
-                />
-              </div>
-              <span>PRELOADING {loadPercentage}%</span>
+        {!isFullyLoaded && (
+          <div className="inline-flex items-center gap-3 px-4 py-1.5 rounded-2xl bg-[#101B28]/90 backdrop-blur-md border border-[#D99A3D]/40 text-[#E8A94D] font-mono text-xs shadow-xl">
+            <div className="w-16 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-[#D99A3D] to-[#3FCFE0] transition-all duration-200"
+                style={{ width: `${loadPercentage}%` }}
+              />
             </div>
-          )}
-        </div>
+            <span>PRELOADING CANVAS {loadPercentage}%</span>
+          </div>
+        )}
       </div>
-    </>
+
+      {/* Hero Embedded Search Card (The Hero Moment) */}
+      <motion.div
+        initial={{ opacity: 0, y: 26, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.7, delay: 0.5, ease: EASE }}
+        className="relative z-10 w-full max-w-4xl mx-auto"
+      >
+        {children}
+      </motion.div>
+    </section>
   );
 }

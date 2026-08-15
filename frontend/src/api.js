@@ -14,6 +14,20 @@ export async function fetchStations() {
 }
 
 /**
+ * Fetch the full network topology (every line's segments + stations) for the
+ * system overview map.
+ * @returns {Promise<{lines: Record<string, {mode: string, segments: number[][][], stations: Array<{id:string,name:string,lat:number,lon:number}>}>}>}
+ */
+export async function fetchNetwork() {
+  const response = await fetch(`${BASE_URL}/network`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ detail: 'Failed to fetch network' }));
+    throw new Error(errorData.detail || `Server error: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
  * Request route optimization from backend engine
  * @param {{
  *   origin: string,

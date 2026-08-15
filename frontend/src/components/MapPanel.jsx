@@ -1,209 +1,324 @@
-import React, { useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
+import MapGL, { Marker, Popup, Source, Layer, NavigationControl, ScaleControl, AttributionControl } from 'react-map-gl/maplibre';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Locate } from 'lucide-react';
 import { getLineConfig } from '../utils/lineColors';
 
-// Fix default Leaflet icon paths in React environment
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
-
-// Custom HTML Pin icon creator
-function createCustomPin(color, labelText, isOriginOrDest = false) {
-  const size = isOriginOrDest ? 32 : 24;
-  return L.divIcon({
-    className: 'custom-map-marker',
-    html: `
-      <div style="
-        background-color: ${color};
-        width: ${size}px;
-        height: ${size}px;
-        border-radius: 50%;
-        border: 3px solid #0f172a;
-        box-shadow: 0 0 12px ${color}80;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #0f172a;
-        font-weight: bold;
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: ${isOriginOrDest ? '12px' : '10px'};
-      ">
-        ${labelText || ''}
-      </div>
-    `,
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-  });
-}
-
-// Map Controller component to handle smooth flyTo / fitBounds & resize invalidation
-function MapFlyController({ bounds }) {
-  const map = useMap();
-
-  useEffect(() => {
-    // Invalidate map size to fix zero-dimension initialization in Framer Motion / flex containers
-    const resizeTimer = setTimeout(() => {
-      map.invalidateSize();
-    }, 250);
-
-    if (bounds && bounds.length > 0) {
-      map.fitBounds(bounds, {
-        padding: [50, 50],
-        maxZoom: 15,
-        animate: true,
-        duration: 1.2,
-      });
-    }
-    return () => clearTimeout(resizeTimer);
-  }, [bounds, map]);
-
-  return null;
-}
+// CARTO Voyager: free, keyless vector basemap. Chosen over a dark style
+// because a near-black map on this app's near-black chrome made routes
+// unreadable — a light basemap gives the colored transit lines and
+// markers real contrast to pop against, plus visible street/area labels
+// for orientation (the "is this actually accurate" test).
+const MAP_STYLE_URL = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
 
 export default function MapPanel({ selectedOption, stationsMap = {} }) {
-  // Default bounds around Mumbai center (Andheri / BKC)
-  const defaultCenter = [19.076, 72.8777];
+  const mapRef = useRef(null);
+  const [activePopupMarker, setActivePopupMarker] = useState(null);
+  const [isStyleLoaded, setIsStyleLoaded] = useState(false);
+
+  // Belt-and-suspenders: if `onLoad` is ever missed (a hot-reloaded map
+  // instance whose 'load' event already fired before this handler existed,
+  // a slow tile host, etc.) the veil should never be able to hang forever —
+  // fall back to revealing the map after a few seconds regardless.
+  useEffect(() => {
+    if (isStyleLoaded) return;
+    const fallback = setTimeout(() => setIsStyleLoaded(true), 4000);
+    return () => clearTimeout(fallback);
+  }, [isStyleLoaded]);
 
   const legs = selectedOption?.legs || [];
 
-  // Prepare polylines & key station markers
-  const { polylineLegs, markers, bounds } = useMemo(() => {
-    const polyLegs = [];
-    const keyMarkersMap = new Map(); // key -> { lat, lon, name, line, isStart, isEnd }
-    const allCoords = [];
-
+  const { geojson, markers, bounds } = useMemo(() => {
     if (!legs || legs.length === 0) {
-      return { polylineLegs: [], markers: [], bounds: [] };
+      return {
+        geojson: { type: 'FeatureCollection', features: [] },
+        markers: [],
+        bounds: null,
+      };
     }
+
+    const features = [];
+    const keyMarkersMap = new Map();
+    let minLon = 180, maxLon = -180, minLat = 90, maxLat = -90;
+
+    const extendBounds = (lon, lat) => {
+      if (lon < minLon) minLon = lon;
+      if (lon > maxLon) maxLon = lon;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+    };
 
     legs.forEach((leg, idx) => {
       const fromSt = leg.from_station;
       const toSt = leg.to_station;
 
-      if (fromSt && toSt) {
-        const p1 = [fromSt.lat, fromSt.lon];
-        const p2 = [toSt.lat, toSt.lon];
-        allCoords.push(p1, p2);
+      if (fromSt && toSt && fromSt.lon != null && fromSt.lat != null && toSt.lon != null && toSt.lat != null) {
+        extendBounds(fromSt.lon, fromSt.lat);
+        extendBounds(toSt.lon, toSt.lat);
 
         const config = getLineConfig(leg.line, leg.mode);
+        const isWalk = leg.type === 'walk';
 
-        polyLegs.push({
-          positions: [p1, p2],
-          color: config.color,
-          isWalk: leg.type === 'walk',
-          legInfo: leg,
+        features.push({
+          type: 'Feature',
+          properties: {
+            id: idx,
+            line: leg.line || 'Transit',
+            color: config.color,
+            isWalk: isWalk,
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              [fromSt.lon, fromSt.lat],
+              [toSt.lon, toSt.lat],
+            ],
+          },
         });
 
-        // Add start marker for leg
+        // Origin marker (first leg start)
         if (idx === 0) {
           keyMarkersMap.set(fromSt.id || fromSt.name, {
             ...fromSt,
             label: 'A',
             role: 'Origin',
-            color: '#10b981',
+            color: '#0F9B6E',
             isOriginOrDest: true,
           });
         } else {
-          // Transfer station
+          // Transfer marker (intermediate leg start)
           if (!keyMarkersMap.has(fromSt.id || fromSt.name)) {
             keyMarkersMap.set(fromSt.id || fromSt.name, {
               ...fromSt,
               label: '⇄',
               role: 'Transfer',
-              color: '#f59e0b',
+              color: '#D9770B',
               isOriginOrDest: false,
             });
           }
         }
 
-        // Add destination marker for last leg
+        // Destination marker (final leg end)
         if (idx === legs.length - 1) {
           keyMarkersMap.set(toSt.id || toSt.name, {
             ...toSt,
             label: 'B',
             role: 'Destination',
-            color: '#ef4444',
+            color: '#C0263B',
             isOriginOrDest: true,
           });
         }
       }
     });
 
+    const hasValidBounds = minLon <= maxLon && minLat <= maxLat && minLon !== 180;
+
     return {
-      polylineLegs: polyLegs,
+      geojson: {
+        type: 'FeatureCollection',
+        features,
+      },
       markers: Array.from(keyMarkersMap.values()),
-      bounds: allCoords.length > 0 ? L.latLngBounds(allCoords) : null,
+      bounds: hasValidBounds ? [[minLon, minLat], [maxLon, maxLat]] : null,
     };
   }, [legs]);
 
-  return (
-    <div className="relative w-full h-[380px] lg:h-full min-h-[380px] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
-      <MapContainer
-        center={defaultCenter}
-        zoom={11}
-        scrollWheelZoom={true}
-        className="dark-tiles w-full h-full"
-        style={{ height: '100%', width: '100%', minHeight: '380px' }}
-      >
-        <TileLayer
-          attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          maxZoom={19}
-        />
+  const fitToBounds = () => {
+    if (!bounds || !mapRef.current) return;
+    try {
+      const map = mapRef.current.getMap ? mapRef.current.getMap() : mapRef.current;
+      map.fitBounds(bounds, {
+        padding: { top: 70, bottom: 70, left: 70, right: 70 },
+        maxZoom: 15.5,
+        duration: 1100,
+        essential: true,
+      });
+    } catch (err) {
+      console.warn('Map fitBounds error:', err);
+    }
+  };
 
-        {/* Polylines for each leg */}
-        {polylineLegs.map((leg, i) => (
-          <Polyline
-            key={i}
-            positions={leg.positions}
-            pathOptions={{
-              color: leg.color,
-              weight: leg.isWalk ? 4 : 6,
-              opacity: 0.9,
-              dashArray: leg.isWalk ? '6, 10' : undefined,
-              lineCap: 'round',
+  // Smooth fitBounds transition when route option changes
+  useEffect(() => {
+    if (isStyleLoaded) fitToBounds();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bounds, isStyleLoaded]);
+
+  const defaultCenter = { longitude: 72.8777, latitude: 19.076, zoom: 11 };
+
+  return (
+    <div className="relative w-full h-[460px] lg:h-[580px] rounded-3xl overflow-hidden bg-[#E9E7DF]">
+      <MapGL
+        ref={mapRef}
+        initialViewState={defaultCenter}
+        mapStyle={MAP_STYLE_URL}
+        style={{ width: '100%', height: '100%' }}
+        minZoom={8.5}
+        maxZoom={17}
+        // Requires Ctrl/Cmd + scroll to zoom, so the map never traps normal
+        // page-scroll — that was reading as "zooming is broken" before.
+        cooperativeGestures={true}
+        onLoad={() => setIsStyleLoaded(true)}
+      >
+        <NavigationControl position="top-right" showCompass={false} />
+        <ScaleControl position="bottom-left" maxWidth={120} unit="metric" />
+        <AttributionControl compact position="bottom-right" />
+
+        {/* Polylines via MapLibre Vector Source & Layers */}
+        <Source id="route-source" type="geojson" data={geojson}>
+          {/* Dark casing beneath the colored line so it reads clearly against the light basemap */}
+          <Layer
+            id="route-casing-layer"
+            type="line"
+            filter={['!=', ['get', 'isWalk'], true]}
+            layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+            paint={{
+              'line-color': '#0B1622',
+              'line-width': 9.5,
+              'line-opacity': 0.35,
             }}
           />
-        ))}
+          {/* Solid line layer for transit legs */}
+          <Layer
+            id="route-solid-layer"
+            type="line"
+            filter={['!=', ['get', 'isWalk'], true]}
+            layout={{
+              'line-cap': 'round',
+              'line-join': 'round',
+            }}
+            paint={{
+              'line-color': ['get', 'color'],
+              'line-width': 6,
+              'line-opacity': 1,
+            }}
+          />
+          {/* Dashed line layer for walk legs */}
+          <Layer
+            id="route-walk-layer"
+            type="line"
+            filter={['==', ['get', 'isWalk'], true]}
+            layout={{
+              'line-cap': 'round',
+              'line-join': 'round',
+            }}
+            paint={{
+              'line-color': '#475569',
+              'line-width': 4,
+              'line-dasharray': [1.4, 1.6],
+              'line-opacity': 0.95,
+            }}
+          />
+        </Source>
 
-        {/* Markers for Key Stations (Start, Transfer, End) */}
+        {/* Start, End & Transfer Station Markers */}
         {markers.map((m, i) => (
           <Marker
-            key={i}
-            position={[m.lat, m.lon]}
-            icon={createCustomPin(m.color, m.label, m.isOriginOrDest)}
+            key={m.id || i}
+            longitude={m.lon}
+            latitude={m.lat}
+            anchor="center"
+            onClick={(e) => {
+              e.originalEvent.stopPropagation();
+              setActivePopupMarker(m);
+            }}
           >
-            <Popup>
-              <div className="font-sans space-y-1 p-1">
-                <div className="text-xs font-mono font-bold uppercase text-slate-400">
-                  {m.role}
-                </div>
-                <div className="text-sm font-bold text-slate-100">{m.name}</div>
-                <div className="text-xs text-slate-400 font-mono">
-                  {m.lat.toFixed(4)}, {m.lon.toFixed(4)}
-                </div>
+            <motion.div
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 22, delay: i * 0.05 }}
+              whileHover={{ scale: 1.15 }}
+              className="cursor-pointer relative flex items-center justify-center"
+              style={{
+                width: m.isOriginOrDest ? '36px' : '28px',
+                height: m.isOriginOrDest ? '36px' : '28px',
+              }}
+            >
+              {m.isOriginOrDest && (
+                <span
+                  className="absolute inset-0 rounded-full animate-ping opacity-40"
+                  style={{ backgroundColor: m.color }}
+                />
+              )}
+              <div
+                className="relative flex items-center justify-center w-full h-full rounded-full"
+                style={{
+                  backgroundColor: m.color,
+                  border: '3px solid #FFFFFF',
+                  boxShadow: `0 2px 10px rgba(15,23,42,0.45)`,
+                  color: '#FFFFFF',
+                  fontWeight: 800,
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontSize: m.isOriginOrDest ? '13px' : '11px',
+                }}
+              >
+                {m.label}
               </div>
-            </Popup>
+            </motion.div>
           </Marker>
         ))}
 
-        {/* Fly to bounds controller */}
-        {bounds && <MapFlyController bounds={bounds} />}
-      </MapContainer>
+        {/* Station Detail Popup */}
+        {activePopupMarker && (
+          <Popup
+            longitude={activePopupMarker.lon}
+            latitude={activePopupMarker.lat}
+            onClose={() => setActivePopupMarker(null)}
+            closeOnClick={false}
+            anchor="bottom"
+            offset={20}
+          >
+            <div className="font-sans space-y-0.5 p-0.5 min-w-[120px]">
+              <div className="text-[10px] font-mono font-bold uppercase tracking-wider" style={{ color: activePopupMarker.color }}>
+                {activePopupMarker.role}
+              </div>
+              <div className="text-sm font-bold text-slate-800">{activePopupMarker.name}</div>
+              <div className="text-[11px] text-slate-400 font-mono">
+                {activePopupMarker.lat?.toFixed(4)}, {activePopupMarker.lon?.toFixed(4)}
+              </div>
+            </div>
+          </Popup>
+        )}
+      </MapGL>
 
-      {/* Map Legend Overlay */}
-      <div className="absolute bottom-3 left-3 z-[400] glass-panel px-3 py-2 rounded-xl text-xs font-mono text-slate-300 border border-slate-700/80 shadow-lg space-y-1">
-        <div className="text-[10px] text-slate-400 uppercase font-semibold">Line Legend</div>
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-400" /> Western</span>
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-400" /> Yellow</span>
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-400" /> Red</span>
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-cyan-400" /> Aqua</span>
+      {/* Style loading veil — avoids a flash of empty grey while the vector style fetches */}
+      <AnimatePresence>
+        {!isStyleLoaded && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            className="absolute inset-0 z-10 flex items-center justify-center bg-[#0B1622]"
+          >
+            <div className="flex items-center gap-2.5 text-slate-400 font-mono text-xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#3FCFE0] animate-pulse" />
+              <span>Loading map…</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Recenter Button */}
+      <button
+        type="button"
+        onClick={fitToBounds}
+        title="Recenter on route"
+        className="absolute top-[52px] right-2.5 z-10 w-[29px] h-[29px] flex items-center justify-center rounded-md bg-white border border-slate-300/70 text-slate-600 hover:text-[#2BB5C6] shadow-md transition-colors cursor-pointer"
+      >
+        <Locate className="w-3.5 h-3.5" />
+      </button>
+
+      {/* Floating Map Legend Overlay */}
+      <div className="absolute bottom-4 left-4 z-10 glass-panel px-4 py-3 rounded-2xl text-xs font-mono text-slate-200 border border-[#3FCFE0]/30 shadow-2xl space-y-1.5 bg-[#101B28]/92 backdrop-blur-xl">
+        <div className="text-[10px] text-slate-400 uppercase font-semibold tracking-wider">Line Legend</div>
+        <div className="flex items-center gap-3 flex-wrap max-w-[240px]">
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#2D8B6F]" /> Western</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#7D5BA6]" /> Central</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#C9971F]" /> Yellow</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#B33A44]" /> Red</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#3D5FA3]" /> Aqua</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#E0A94E]" /> Bus</span>
         </div>
       </div>
     </div>
