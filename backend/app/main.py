@@ -211,12 +211,12 @@ def describe_route(route: dict, is_raining: bool) -> str:
 
 # --- Endpoints ---
 
-@app.get("/")
+@app.get("/api/")
 def health_check():
     return {"status": "TransitFlow backend is running", "stations_loaded": len(STATION_INFO)}
 
 
-@app.get("/stations")
+@app.get("/api/stations")
 def list_stations():
     return {
         station_id: {**info, "serves": STATION_SERVICES.get(station_id, [])}
@@ -224,7 +224,7 @@ def list_stations():
     }
 
 
-@app.get("/network")
+@app.get("/api/network")
 def get_network():
     """
     Full system topology for the overview map: each named line with its
@@ -262,7 +262,7 @@ def get_network():
     }
 
 
-@app.post("/route", response_model=RouteResponse)
+@app.post("/api/route", response_model=RouteResponse)
 def get_routes(request: RouteRequest):
     origin = request.origin.lower()
     destination = request.destination.lower()
