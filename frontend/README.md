@@ -1,16 +1,43 @@
-# React + Vite
+# TransitFlow frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The React single-page app for TransitFlow. This is the interface that `vercel.json` builds and deploys.
 
-Currently, two official plugins are available:
+```bash
+npm install
+npm run dev        # http://localhost:5173
+npm run build      # production build in dist/
+npm run lint
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+By default it calls the API at `http://127.0.0.1:8000/api`. Set `VITE_API_URL` (for example in `.env.local`) to use a different backend.
 
-## React Compiler
+## Source layout
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```
+src/
+  App.jsx                    all page state, URL parameters, Ctrl+K, geolocation
+  api.js                     fetchStations, fetchNetwork, calculateRoute
+  components/
+    HeroCanvasAnimation.jsx  scroll-scrubbed frame sequence behind the search board
+    SearchBoard.jsx          origin and destination, priority, hour, day type, rain
+    StationAutocomplete.jsx  typeahead with line tags
+    SavedRoutes.jsx          saved commutes and recent searches
+    BentoResultsGrid.jsx     comparison chart, route cards, map, timeline, crowd chart
+    RouteComparisonChart.jsx time, fare and comfort bars
+    MapPanel.jsx             MapLibre map for the selected route
+    NetworkMap.jsx           all five lines with per-line toggles
+    JourneyTimeline.jsx      board, ride, transfer, arrive steps
+    BestTimeToTravel.jsx     24-hour crowd chart
+    CommandPalette.jsx       Ctrl+K quick actions
+    StatusStates.jsx         loading, empty and error states
+  hooks/useLenis.js          smooth scrolling (respects reduced motion)
+  utils/lineColors.js        line colours, crowd levels, ticket links
+  utils/haversine.js         nearest station for the Near Me button
+public/ezgif-jpg/            the 270 hero frames
+```
 
-## Expanding the ESLint configuration
+## Things worth knowing
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- `vite.config.js` excludes `maplibre-gl` from dependency pre-bundling. Without that, Vite rewrites the MapLibre worker URL, the worker 404s and the map stays on "Loading".
+- The hero backdrop is `fixed` with `z-0`. Anything in the results area that is not positioned has to sit in a `relative z-10` container or it is painted underneath it.
+- `src/components/RouteCard.jsx` is not imported anywhere.
