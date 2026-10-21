@@ -32,6 +32,7 @@ see _project_for_objective.
 
 from datetime import datetime
 from typing import Optional
+import functools
 import itertools
 import math
 import networkx as nx
@@ -197,6 +198,7 @@ def _edge_weight(attr: dict, objective: str) -> float:
     return (5 - attr["comfort_score"]) / 4
 
 
+@functools.lru_cache(maxsize=None)
 def _project_for_objective(objective: str) -> nx.DiGraph:
     """
     Collapses the layered MultiDiGraph down to a plain DiGraph for one
@@ -205,6 +207,12 @@ def _project_for_objective(objective: str) -> nx.DiGraph:
     a simple Di/Graph — the real per-hop attributes (line, exact cost, etc.)
     are re-fetched from the original GRAPH afterwards in _build_legs, so
     nothing is lost by collapsing here.
+
+    GRAPH is built once at import and never modified, and
+    shortest_simple_paths only reads the graph it is given, so each
+    objective's projection is built on first use and then shared. Before
+    this was cached it was rebuilt three times per request (about 15% of
+    the average request time in benchmarks/profile_breakdown.py).
     """
     P = nx.DiGraph()
     P.add_nodes_from(GRAPH.nodes)
