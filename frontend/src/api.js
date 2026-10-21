@@ -1,6 +1,18 @@
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
 
 /**
+ * FastAPI returns `detail` as a string for HTTPException (400/404) but as a
+ * list of {loc, msg} objects for request-validation errors (422).
+ */
+function errorMessage(errorData, fallback) {
+  const { detail } = errorData || {};
+  if (Array.isArray(detail)) {
+    return detail.map((d) => `${(d.loc || []).slice(1).join('.')}: ${d.msg}`).join('; ') || fallback;
+  }
+  return detail || fallback;
+}
+
+/**
  * Fetch list of all transit stations
  * @returns {Promise<Record<string, {name: string, lat: number, lon: number, serves: Array<{mode: string, line?: string}>}>>}
  */
@@ -58,7 +70,7 @@ export async function calculateRoute(requestBody) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ detail: 'An unexpected error occurred while calculating route.' }));
-    throw new Error(errorData.detail || `Error ${response.status}: Failed to calculate route.`);
+    throw new Error(errorMessage(errorData, `Error ${response.status}: Failed to calculate route.`));
   }
 
   return response.json();

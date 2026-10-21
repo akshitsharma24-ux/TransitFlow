@@ -79,7 +79,9 @@ export default function App() {
     const rain = params.get('rain');
     if (from) setOrigin(from);
     if (to) setDestination(to);
-    if (p) setPriority(p);
+    // The API now rejects unknown priorities, so ignore a hand-edited link
+    // instead of letting it break every search.
+    if (['fastest', 'cheapest', 'comfortable'].includes(p)) setPriority(p);
     if (rain != null) setIsRaining(rain === '1');
   }, []);
 
@@ -317,7 +319,9 @@ export default function App() {
         <StatsStrip />
 
         {/* 3. Results Workspace (Comparable List & Interactive Map) */}
-        <div ref={resultsRef} className="space-y-6 pt-4 scroll-mt-24">
+        {/* relative z-10: the hero backdrop is `fixed z-0`, which otherwise paints over
+            the non-positioned error and empty states and hides them. */}
+        <div ref={resultsRef} className="relative z-10 space-y-6 pt-4 scroll-mt-24">
           {isLoading && <LoadingSkeleton />}
 
           {routeError && (
