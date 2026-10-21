@@ -25,10 +25,10 @@ Before running for the first time (or after changing seed_data.py):
     python -m app.seed_data
 """
 
-from typing import Optional
+from typing import Literal, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.routing_engine import (
     STATION_INFO, STATION_SERVICES, MODE_LABELS, get_ranked_routes, default_hour_and_day_type,
@@ -56,10 +56,12 @@ app.add_middleware(
 class RouteRequest(BaseModel):
     origin: str
     destination: str
-    priority: str = "fastest"
+    # Constrained so a bad value is rejected with a 422 instead of silently
+    # falling back to default scoring weights (found by the API test suite).
+    priority: Literal["fastest", "cheapest", "comfortable"] = "fastest"
     is_raining: bool = False
-    hour: Optional[int] = None
-    day_type: Optional[str] = None
+    hour: Optional[int] = Field(default=None, ge=0, le=23)
+    day_type: Optional[Literal["weekday", "weekend"]] = None
 
 
 class StationPoint(BaseModel):
