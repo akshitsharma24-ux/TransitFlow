@@ -2,6 +2,8 @@
 
 A multi-criteria route comparison system for Mumbai's public transit. Give it an origin, a destination and what matters to you (fastest, cheapest or most comfortable) and it returns several genuinely different journeys across suburban rail, metro, bus and road, each with time, fare, comfort, a predicted crowd level, a step-by-step itinerary and a map.
 
+**Live prototype:** <https://transit-flow-seven.vercel.app> (the API is under `/api`, for example <https://transit-flow-seven.vercel.app/api/>).
+
 TransitFlow is a Third Year Mini Project (Semester V, 2026-27) for the Department of Computer Engineering, Sardar Patel Institute of Technology, Mumbai. It ties together four subjects: discrete structures and graph theory, design and analysis of algorithms, data structures, and database management systems.
 
 ![Search and results](docs/images/home.jpg)
