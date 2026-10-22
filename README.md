@@ -90,7 +90,7 @@ python benchmarks/benchmark.py load --levels 1 5 10 25 50 --pid <server pid>
 python benchmarks/profile_breakdown.py           # where request time goes
 ```
 
-Measured on one development laptop (Intel Core i7-12700H, Windows 11, Python 3.14): all 12,432 ordered station pairs return at least one route with a median engine time of 4.9 ms and a 95th percentile of 13.5 ms. A single Uvicorn worker sustains about 46 requests per second on a mixed workload and four workers about 115. These are local numbers, not a production capacity claim. The full method and results are in the project report.
+Measured on one development laptop (Intel Core i7-12700H, Windows 11, Python 3.14): all 12,432 ordered station pairs return at least one route with a median engine time of 4.9 ms and a 95th percentile of 13.5 ms. A single Uvicorn worker sustains about 46 requests per second on a mixed workload and four workers about 120. These are local numbers, not a production capacity claim. The full method and results are in the project report.
 
 ## Repository layout
 
