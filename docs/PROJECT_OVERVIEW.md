@@ -157,6 +157,46 @@ vite-plugin-pwa.
 
 ---
 
+## Planner, live layer and assistant (added Oct 2026)
+
+Backend modules, all under `backend/app/`:
+
+- **`crowd_model.py`** — the crowd model: hourly rhythm from `crowding_rules`
+  interpolated to the minute, direction (towards/away from each line's CBD end,
+  derived from station order), position along the line (load peaks ~3/4 of the
+  way to the city), per-line character, rain. Also headways and service hours.
+  Estimates, not measurements.
+- **`planner.py`** — places a routing candidate on the clock (wait = half the
+  headway plus a "train too full" allowance, ride, walk, change), scores each
+  ride at the minute it happens, ranks by preference, runs the departure-advisor
+  sweep (±2 h), supports arrive-by, and chains trips into a day plan.
+  Trade-off constants (value of a rupee in minutes, hassle per change, weight of
+  crowding, penalty for shifting your plans) are named at the top of the file.
+- **`live.py`** — network snapshot, line ribbon, crowd atlas, rider reports
+  (blended with exponential decay, 25 min half-life) and **simulated** service
+  alerts (deterministic hash of line, day and half-hour; flagged `simulated`).
+- **`state_db.py`** — separate writable database for `crowd_reports`
+  (index on station + time). `/tmp` on Vercel, so reports are short-lived there
+  unless `STATE_DATABASE_URL` points at PostgreSQL.
+- **`chatbot.py`** — rule-based assistant: alias table + n-gram station lookup,
+  Levenshtein edit distance for typos, slot parsing (time, date, arrive-by,
+  preference, rain, avoid), ordered intent rules, client-held context for
+  follow-ups. No LLM.
+- **`routes_plan.py`, `routes_live.py`, `routes_chat.py`, `schemas.py`** — the
+  HTTP layer (`/api/plan`, `/api/plan/day`, `/api/live*`, `/api/crowd/*`,
+  `/api/chat`).
+
+Frontend (`frontend/src/`): `App.jsx` now switches between four views
+(Compare, Trip Planner, Day Planner, Live Pulse) via `?view=`; the heavy hero
+animation only renders on Compare. New components: `TripPlanner`, `DayPlanner`,
+`LivePulse` (+ `LineRibbon`, `CrowdAtlas`), `ChatAssistant`,
+`ItineraryTimeline`, `ItineraryCard`, `DepartureAdvisor`, `PlannerControls`,
+`CrowdChip`. Rain comes from Open-Meteo (`utils/weather.js`,
+`hooks/useRainForecast.js`). Times are read from the API's `+05:30` strings
+directly so every viewer sees Mumbai time.
+
+---
+
 ## How to run
 
 ```bash
@@ -184,8 +224,13 @@ an already-open tab loses its HMR connection on restart.
 | Yellow (2A)   | metro | 17       | Dahisar East → Andheri West             |
 | Red (7)       | metro | 14       | Dahisar East → Gundavali                |
 | Aqua (3)      | metro | 27       | Cuffe Parade → Aarey JVLR (underground) |
+| Harbour       | train | 25       | CSMT → Panvel (Navi Mumbai)             |
+| Blue (Metro 1)| metro | 12       | Versova → Ghatkopar                     |
 
-Plus a bus + road corridor and 19 walking interchanges. **112 stations total.**
+Plus a bus + road corridor and 28 walking interchanges. **149 stations total.**
+The Harbour platforms of CSMT, Masjid, Sandhurst Road and Kurla have their own
+station ids (like "Dadar (Central)") joined by short walking interchanges, so
+the router never invents a fake change in the middle of a direct Harbour train.
 
 ---
 
@@ -206,12 +251,13 @@ Plus a bus + road corridor and 19 walking interchanges. **112 stations total.**
 ## Known limitations / tech debt
 
 - Station coordinates are **interpolated**, not real GPS. Fares and times are
-  **estimates**. Crowd prediction is a **heuristic**, not live ridership data.
+  **estimates**. Crowd prediction is a **model**, not live ridership data; the
+  "live" fluctuations and service alerts are **simulated**, rider reports are real.
 - `frontend/src/components/RouteCard.jsx` is **dead code** (not imported anywhere).
 - `backend/app/__pycache__/*.pyc` is committed to git (should be ignored).
 - Repo-wide lint noise: unused `React` imports (React 19 JSX runtime doesn't need
   them) and a few `setState-in-effect` warnings — pre-existing, not blocking.
-- No automated tests. The DB is functional but not fully normalized (line/fare
+- 274 automated tests (backend); no frontend tests yet. The DB is functional but not fully normalized (line/fare
   data still lives on each edge rather than in dedicated `lines` / `fares` tables).
 
 ## Suggested next improvements
@@ -222,5 +268,6 @@ Plus a bus + road corridor and 19 walking interchanges. **112 stations total.**
    A\*" comparison — strong DAA demonstration.
 3. Real station GPS coordinates (OpenStreetMap / Overpass) — biggest visible
    accuracy win.
-4. A `pytest` suite for the routing engine.
-5. "Avoid a line" constraint routing; reverse-journey / round-trip fare.
+4. Frontend tests (Vitest / Playwright) for the planner flow.
+5. "Avoid a line" constraint routing.
+6. A real feed (GTFS / operator API) or crowd sensors in place of the simulated layer.

@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { CloudRain, Clock, TrainFront, Ticket } from 'lucide-react';
+import { CloudRain, Clock, TrainFront, Ticket, Route, CalendarRange, Radio, Bot } from 'lucide-react';
 
 export default function FeaturesSection() {
   const features = [
@@ -18,7 +18,7 @@ export default function FeaturesSection() {
       title: 'Predictive Crowd Forecasting',
       badge: 'Comfortable → Packed',
       description:
-        'Every route carries a predicted crowd level driven by its busiest leg — blending each line\'s baseline character with hour-of-day and weekday/weekend patterns. Peak-hour trains read "Packed"; a weekend metro reads "Comfortable".',
+        'Crowd is modelled to the minute, by direction and by position along the line: towards the city in the morning, away from it in the evening, heaviest around Dadar. Each leg is scored at the moment it is ridden, with rain and a per-line character on top.',
       icon: Clock,
       accentColor: 'text-[#E8A94D]',
       borderColor: 'border-[#D99A3D]/30',
@@ -26,9 +26,9 @@ export default function FeaturesSection() {
     },
     {
       title: 'Multi-Line Rail + Metro Integration',
-      badge: '5 Corridors',
+      badge: '7 Lines',
       description:
-        'Unified Dijkstra shortest-path graph across Western Line (29 stations), Central Line (26), Metro Yellow 2A (17), Metro Red 7 (14), and Metro Aqua 3 (27) — 112 stations, wired by real interchanges.',
+        'One shortest-path graph across Western (29 stations), Central (26), Harbour (25), Metro Yellow 2A (17), Red 7 (14), Aqua 3 (27) and Blue / Metro 1 (12): 149 stations wired by 28 interchanges, reaching Navi Mumbai.',
       icon: TrainFront,
       accentColor: 'text-[#4DD9E8]',
       borderColor: 'border-[#4DD9E8]/30',
@@ -40,6 +40,46 @@ export default function FeaturesSection() {
       description:
         'Automated monthly transit pass calculation evaluating single-journey ticket totals against monthly suburban rail pass costs to derive exact breakeven days.',
       icon: Ticket,
+      accentColor: 'text-[#F2BE6B]',
+      borderColor: 'border-[#F2BE6B]/30',
+      bgGlow: 'hover:shadow-[0_0_30px_rgba(242,190,107,0.15)]',
+    },
+    {
+      title: 'Trip Planner with Departure Advisor',
+      badge: 'New',
+      description:
+        'Pick any day and time (leave at, or arrive by) and get an itinerary on the clock: waiting, riding and changing, with crowd on every leg and a chart showing when the same trip is calmer.',
+      icon: Route,
+      accentColor: 'text-[#3FCFE0]',
+      borderColor: 'border-[#3FCFE0]/30',
+      bgGlow: 'hover:shadow-[0_0_30px_rgba(63,207,224,0.15)]',
+    },
+    {
+      title: 'Whole-Day Planner',
+      badge: 'New',
+      description:
+        'Chain home, office, gym and back into one timed schedule. Each trip is forecast for the minute it happens, with the day\'s fares, time in busy trains and a monthly-pass verdict.',
+      icon: CalendarRange,
+      accentColor: 'text-[#E8A94D]',
+      borderColor: 'border-[#D99A3D]/30',
+      bgGlow: 'hover:shadow-[0_0_30px_rgba(217,154,61,0.15)]',
+    },
+    {
+      title: 'Live Crowd Pulse',
+      badge: 'Rider reports',
+      description:
+        'A network-wide view of crowd by line, direction and station, adjusted by reports from riders. Fluctuations and service alerts are simulated and labelled as such.',
+      icon: Radio,
+      accentColor: 'text-[#4DD9E8]',
+      borderColor: 'border-[#4DD9E8]/30',
+      bgGlow: 'hover:shadow-[0_0_30px_rgba(77,217,232,0.15)]',
+    },
+    {
+      title: 'TransitBot Assistant',
+      badge: 'Rule-based',
+      description:
+        'Ask in plain language: "Borivali to Churchgate tomorrow 8:45", "how crowded is Dadar". Typos are tolerated by edit-distance matching, follow-ups keep context, and no external AI service is involved.',
+      icon: Bot,
       accentColor: 'text-[#F2BE6B]',
       borderColor: 'border-[#F2BE6B]/30',
       bgGlow: 'hover:shadow-[0_0_30px_rgba(242,190,107,0.15)]',

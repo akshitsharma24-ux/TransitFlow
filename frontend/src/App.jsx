@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { TrainFront, Sparkles, MapPin, Search } from 'lucide-react';
+import { TrainFront } from 'lucide-react';
 import { fetchStations, calculateRoute } from './api';
 import SearchBoard from './components/SearchBoard';
 import BentoResultsGrid from './components/BentoResultsGrid';
@@ -14,9 +14,40 @@ import CommandPalette from './components/CommandPalette';
 import ScrollProgressBar from './components/ScrollProgressBar';
 import NetworkMap from './components/NetworkMap';
 import useLenis from './hooks/useLenis';
+import TripPlanner from './components/TripPlanner';
+import DayPlanner from './components/DayPlanner';
+import LivePulse from './components/LivePulse';
+import ChatAssistant from './components/ChatAssistant';
+
+const VIEWS = [
+  { id: 'search', label: 'Compare' },
+  { id: 'plan', label: 'Trip Planner', isNew: true },
+  { id: 'day', label: 'Day Planner', isNew: true },
+  { id: 'live', label: 'Live Pulse', isNew: true },
+];
+
+function readView() {
+  const v = new URLSearchParams(window.location.search).get('view');
+  return VIEWS.some((x) => x.id === v) ? v : 'search';
+}
+
+/** Planner presets that arrive in the address bar (shared links). */
+function readPlannerParams() {
+  const p = new URLSearchParams(window.location.search);
+  if (readView() !== 'plan' || !p.get('from') || !p.get('to')) return null;
+  return {
+    from: p.get('from'), to: p.get('to'), date: p.get('date') || undefined, time: p.get('time') || undefined,
+    when: p.get('when') || undefined, pref: p.get('pref') || undefined,
+    rain: p.get('rain') === '1' ? true : p.get('rain') === '0' ? false : undefined,
+    avoid: (p.get('avoid') || '').split(',').filter(Boolean),
+  };
+}
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const [view, setViewState] = useState(readView);
+  const [plannerPreset, setPlannerPreset] = useState(readPlannerParams);
+  const [plannerKey, setPlannerKey] = useState(0);
   const [stationsMap, setStationsMap] = useState({});
   const [isStationsLoading, setIsStationsLoading] = useState(true);
   const [stationsError, setStationsError] = useState(null);
@@ -178,7 +209,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!isStationsLoading && !stationsError && Object.keys(stationsMap).length > 0) {
+    if (view === 'search' && !isStationsLoading && !stationsError && Object.keys(stationsMap).length > 0) {
       // No args: picks up whatever origin/destination are already in state —
       // either the defaults, or a shareable-link override applied on mount.
       handleSearch();
@@ -231,6 +262,26 @@ export default function App() {
 
   const options = routeData?.options || [];
 
+  const scrollToTop = () => {
+    if (lenisRef.current) lenisRef.current.scrollTo(0, { immediate: true });
+    else window.scrollTo(0, 0);
+  };
+
+  const setView = (next) => {
+    setViewState(next);
+    window.history.replaceState(null, '', next === 'search' ? window.location.pathname : `?view=${next}`);
+    if (next !== 'plan') setPlannerPreset(null);
+    scrollToTop();
+  };
+
+  // The assistant asks for a planned journey to be opened in the Trip Planner.
+  const openPlanner = (params) => {
+    setPlannerPreset(params);
+    setPlannerKey((k) => k + 1);
+    setViewState('plan');
+    scrollToTop();
+  };
+
   return (
     <div className="min-h-screen bg-[#0B1622] text-[#F2F5F7] flex flex-col font-sans antialiased selection:bg-[#3FCFE0] selection:text-[#0B1622]">
       <ScrollProgressBar />
@@ -266,8 +317,30 @@ export default function App() {
           </div>
         </div>
 
+        <nav aria-label="Main" className="hidden md:flex items-center gap-1 bg-[#101B28] border border-[#3FCFE0]/20 rounded-2xl p-1">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => setView(v.id)}
+              aria-current={view === v.id ? 'page' : undefined}
+              className={`relative px-4 py-1.5 rounded-xl text-sm font-medium transition-colors cursor-pointer ${
+                view === v.id ? 'text-[#0B1622] font-bold' : 'text-slate-300 hover:text-[#F2F5F7]'
+              }`}
+            >
+              {view === v.id && (
+                <motion.span layoutId="navActive" className="absolute inset-0 rounded-xl bg-gradient-to-r from-[#3FCFE0] to-[#2BB5C6]" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />
+              )}
+              <span className="relative z-10 flex items-center gap-1.5">
+                {v.label}
+                {v.isNew && view !== v.id && <span className="w-1.5 h-1.5 rounded-full bg-[#E8A94D]" aria-label="new" />}
+              </span>
+            </button>
+          ))}
+        </nav>
+
         <div className="flex items-center gap-4 font-mono text-xs text-slate-300">
-          <div className="hidden sm:flex items-center gap-2 bg-[#101B28] px-3.5 py-1.5 rounded-xl border border-[#3FCFE0]/25 shadow-inner">
+          <div className="hidden xl:flex items-center gap-2 bg-[#101B28] px-3.5 py-1.5 rounded-xl border border-[#3FCFE0]/25 shadow-inner">
             <span className="w-2 h-2 rounded-full bg-[#3FCFE0] animate-pulse" />
             <span>FastAPI Dijkstra Active</span>
           </div>
@@ -282,7 +355,47 @@ export default function App() {
         </div>
       </header>
 
+      {/* Mobile view switcher (the header tabs are hidden below md) */}
+      <nav aria-label="Main (mobile)" className="md:hidden sticky top-[65px] z-40 flex gap-1 overflow-x-auto px-3 py-2 bg-[#0B1622]/95 backdrop-blur-xl border-b border-slate-800">
+        {VIEWS.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            onClick={() => setView(v.id)}
+            aria-current={view === v.id ? 'page' : undefined}
+            className={`shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-medium border cursor-pointer ${
+              view === v.id ? 'bg-[#3FCFE0] text-[#0B1622] border-transparent font-bold' : 'bg-[#101B28] text-slate-300 border-slate-800'
+            }`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </nav>
+
+      {view === 'plan' && (
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          {isStationsLoading ? <p className="py-20 text-center font-mono text-sm text-slate-400">Loading stations...</p>
+            : stationsError ? <div className="py-20"><ErrorState message={stationsError} onRetry={() => window.location.reload()} /></div>
+              : <TripPlanner key={plannerKey} stationsMap={stationsMap} initial={plannerPreset} onNavigate={setView} />}
+        </main>
+      )}
+
+      {view === 'day' && (
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          {isStationsLoading ? <p className="py-20 text-center font-mono text-sm text-slate-400">Loading stations...</p>
+            : stationsError ? <div className="py-20"><ErrorState message={stationsError} onRetry={() => window.location.reload()} /></div>
+              : <DayPlanner stationsMap={stationsMap} onNavigate={setView} />}
+        </main>
+      )}
+
+      {view === 'live' && (
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <LivePulse stationsMap={stationsMap} onNavigate={setView} />
+        </main>
+      )}
+
       {/* Main Page Layout Container */}
+      {view === 'search' && (
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 space-y-16 relative z-10">
         {/* 1. Cinematic Moving-Metro Hero with Embedded Floating Search Board */}
         <HeroCanvasAnimation>
@@ -362,6 +475,9 @@ export default function App() {
         {/* 6. Scroll-Driven Algorithm Deep-Dive (Dijkstra + Yen's, scoring, penalties) */}
         <HowItWorksSection />
       </main>
+      )}
+
+      <ChatAssistant onOpenPlanner={openPlanner} onNavigate={setView} />
 
       {/* Footer */}
       <footer className="border-t border-[#3FCFE0]/20 py-8 px-6 text-xs font-mono text-slate-400 glass-panel mt-20 bg-[#0B1622]/95">
@@ -383,6 +499,10 @@ export default function App() {
             <span>Red Line 7</span>
             <span>•</span>
             <span>Aqua Line 3</span>
+            <span>•</span>
+            <span>Harbour Line</span>
+            <span>•</span>
+            <span>Blue Line (Metro 1)</span>
           </div>
         </div>
       </footer>

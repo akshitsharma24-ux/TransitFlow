@@ -6,9 +6,9 @@ export default function StatsStrip() {
   const stats = [
     {
       label: 'Stations Loaded',
-      value: '112',
+      value: '149',
       unit: 'stations',
-      description: 'Western, Central & 3 Metro lines',
+      description: 'Rail, Harbour & four metro lines',
       icon: Building2,
       color: 'text-[#3FCFE0]',
       border: 'border-[#3FCFE0]/25',
@@ -26,9 +26,9 @@ export default function StatsStrip() {
     },
     {
       label: 'Rail + Metro Lines',
-      value: '5',
+      value: '7',
       unit: 'lines',
-      description: 'Western, Central + Yellow, Red, Aqua',
+      description: 'Western, Central, Harbour + 4 metro',
       icon: Layers,
       color: 'text-[#4DD9E8]',
       border: 'border-[#4DD9E8]/25',
@@ -36,7 +36,7 @@ export default function StatsStrip() {
     },
     {
       label: 'Interchange Hubs',
-      value: '19',
+      value: '28',
       unit: 'hubs',
       description: 'Cross-mode walking transfers',
       icon: GitFork,

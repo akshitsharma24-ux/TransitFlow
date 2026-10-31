@@ -75,6 +75,26 @@ export const LINE_CONFIGS = {
     ticket: OFFICIAL_TICKET_LINKS.metro,
     icon: TrainFront,
   },
+  'Harbour Line': {
+    name: 'Harbour Line',
+    mode: 'train',
+    color: '#C2549B', // Harbour Line - magenta, distinct from every other line
+    bgClass: 'bg-[#C2549B]/15 text-[#e07fba] border-[#C2549B]/40',
+    badgeClass: 'bg-[#C2549B] text-slate-100 font-bold',
+    accentBorder: 'border-l-[#C2549B]',
+    ticket: OFFICIAL_TICKET_LINKS.train,
+    icon: Train,
+  },
+  'Blue Line': {
+    name: 'Blue Line',
+    mode: 'metro',
+    color: '#2F8FE0', // Metro Line 1 - brighter than Aqua so the two read apart on a map
+    bgClass: 'bg-[#2F8FE0]/15 text-[#5cb0f5] border-[#2F8FE0]/40',
+    badgeClass: 'bg-[#2F8FE0] text-slate-100 font-bold',
+    accentBorder: 'border-l-[#2F8FE0]',
+    ticket: OFFICIAL_TICKET_LINKS.metro,
+    icon: TrainFront,
+  },
   'Bus': {
     name: 'Bus',
     mode: 'bus',
@@ -162,3 +182,6 @@ export function getJourneyComplexity(legs = []) {
   }
   return `${totalLegs} steps • ${transfers} transfer${transfers > 1 ? 's' : ''}`;
 }
+
+/** The order lines are listed in wherever they appear together. */
+export const LINE_ORDER = ['Western Line', 'Central Line', 'Harbour Line', 'Yellow Line', 'Red Line', 'Aqua Line', 'Blue Line'];

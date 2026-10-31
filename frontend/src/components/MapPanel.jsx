@@ -318,6 +318,8 @@ export default function MapPanel({ selectedOption, stationsMap = {} }) {
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#C9971F]" /> Yellow</span>
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#B33A44]" /> Red</span>
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#3D5FA3]" /> Aqua</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#C2549B]" /> Harbour</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#2F8FE0]" /> Blue</span>
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#E0A94E]" /> Bus</span>
         </div>
       </div>

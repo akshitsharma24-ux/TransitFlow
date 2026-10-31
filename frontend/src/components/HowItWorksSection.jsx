@@ -7,7 +7,7 @@ const STEPS = [
     icon: Network,
     tag: 'STEP 1 — GRAPH MODEL',
     title: 'Every station becomes several graph nodes',
-    body: 'Each station is layered by mode — (andheri, train), (andheri, metro) — wired together by real edges across 112 stations spanning the Western Line, Central Line, and all 3 metro lines, plus walking transfers between physically distinct interchange stations.',
+    body: 'Each station is layered by mode — (andheri, train), (andheri, metro) — wired together by real edges across 149 stations spanning the Western, Central and Harbour rail lines and all four metro lines, plus walking transfers between physically distinct interchange stations.',
     code: 'G.add_edge((u, mode), (v, mode), time=…, cost=…, comfort=…)',
   },
   {

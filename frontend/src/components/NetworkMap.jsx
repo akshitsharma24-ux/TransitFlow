@@ -4,10 +4,9 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { motion } from 'framer-motion';
 import { Network as NetworkIcon } from 'lucide-react';
 import { fetchNetwork } from '../api';
-import { getLineConfig } from '../utils/lineColors';
+import { getLineConfig, LINE_ORDER } from '../utils/lineColors';
 
 const MAP_STYLE_URL = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
-const LINE_ORDER = ['Western Line', 'Central Line', 'Yellow Line', 'Red Line', 'Aqua Line'];
 
 export default function NetworkMap() {
   const mapRef = useRef(null);
@@ -96,7 +95,7 @@ export default function NetworkMap() {
           Explore Every Line
         </h2>
         <p className="text-sm text-slate-300 font-sans">
-          All 112 stations across 5 corridors on one map. Toggle a line to isolate it.
+          All 149 stations across 7 lines on one map. Toggle a line to isolate it.
         </p>
       </div>
 
