@@ -39,6 +39,7 @@ import networkx as nx
 
 from app.database import SessionLocal
 from app.models import StationModel, EdgeModel, InterchangeModel, CrowdingRuleModel
+from app import crowd_model
 
 TRANSFER_COMFORT = 3.0
 MINIMUM_FARE = 5  # Indian Railways/Metro minimum fare regardless of distance, applied per paid leg
@@ -53,6 +54,8 @@ METRO_FARE_PARAMS = {
     "Yellow Line": {"band": 5, "cap": 50},
     "Red Line": {"band": 4, "cap": 50},
     "Aqua Line": {"band": 3, "cap": 80},
+    # Metro 1 (Versova - Ghatkopar), fares run about Rs 10-40 end to end.
+    "Blue Line": {"band": 3, "cap": 40},
 }
 
 
@@ -165,7 +168,7 @@ STATION_SERVICES = load_station_services()
 # what lets Aqua Line (underground) come out unaffected while Yellow/Red
 # (elevated) still take a small hit, and open train platforms take the worst.
 RAIN_COMFORT_PENALTY_BY_MODE = {"train": 0.30, "road": 0.10, "metro": 0.05, "bus": 0.15}
-RAIN_COMFORT_PENALTY_BY_LINE = {"Aqua Line": 0.0, "Yellow Line": 0.05, "Red Line": 0.05}
+RAIN_COMFORT_PENALTY_BY_LINE = {"Aqua Line": 0.0, "Yellow Line": 0.05, "Red Line": 0.05, "Blue Line": 0.05}
 
 MODE_LABELS = {"train": "Local Train", "road": "Car / Auto (Road)", "metro": "Metro", "bus": "Bus"}
 
@@ -297,7 +300,7 @@ def _build_legs(node_path, objective):
     for leg in legs:
         if leg["type"] != "ride":
             continue
-        if leg["line"] in ("Yellow Line", "Red Line", "Aqua Line"):
+        if leg["line"] in METRO_FARE_PARAMS:
             leg["cost_rupees"] = metro_slab_fare(leg["line"], leg["hop_count"])
         else:
             leg["cost_rupees"] = max(leg["cost_rupees"], MINIMUM_FARE)
@@ -416,143 +419,59 @@ def get_crowding_penalties(hour: int, day_type: str) -> dict:
 
 
 def default_hour_and_day_type():
-    now = datetime.now()
-    return now.hour, ("weekend" if now.weekday() >= 5 else "weekday")
+    # Mumbai time, not the server's clock: serverless hosts run in UTC, which
+    # would shift every default forecast by five and a half hours.
+    now = crowd_model.now_ist()
+    return now.hour, crowd_model.day_type_for(now)
 
 
-# --- Crowd prediction (heuristic, not live ridership) ---
-# We have no real-time headcount feed, so this is an honest rule-based
-# forecast. crowding_rules now stores one row per (mode, hour, day_type)
-# holding a 0-1 "how full is a typical commute rhythm at this hour" factor
-# (see seed_data.py's WEEKDAY/WEEKEND_HOURLY_FACTOR curves) — a smooth
-# double-peaked shape (AM ~9, PM ~18, PM the fuller of the two) rather than
-# a flat penalty that only existed inside two rush-hour blocks. That old
-# shape could never show a route as genuinely "Comfortable" (there was
-# always at least the flat baseline) and jumped straight to "Packed" at
-# the rush-hour boundary instead of ramping. Each line/mode's character
-# (trunk suburban trains run fuller than the newer metros, even off-peak)
-# is now expressed as a MIN..MAX range that the hourly factor scales into,
-# so a 3am train reads as genuinely quiet and a 6pm one as genuinely full.
-CROWD_RANGE_BY_LINE = {
-    "Western Line": (0.15, 0.95),
-    "Central Line": (0.17, 0.95),
-    "Yellow Line": (0.08, 0.62),
-    "Red Line": (0.08, 0.60),
-    "Aqua Line": (0.05, 0.50),
-}
-CROWD_RANGE_BY_MODE = {
-    "train": (0.15, 0.95),
-    "metro": (0.08, 0.60),
-    "bus": (0.10, 0.70),
-    "road": (0.05, 0.35),
-}
-
-# Upper bound of each band (exclusive), lowest first.
-CROWD_LEVELS = [(0.30, "Comfortable"), (0.52, "Moderate"), (0.75, "Busy"), (1.01, "Packed")]
-
-
-def crowd_level_for_score(score: float) -> str:
-    return next(name for thresh, name in CROWD_LEVELS if score < thresh)
-
-
-# --- Per-station variation: same line/hour, different route, different curve ---
-# Without this, every route whose busiest leg happened to be "Western Line"
-# showed the exact same 24h shape regardless of which two stations were
-# actually involved. Real Mumbai commuting has two well-known structural
-# effects this was missing:
-#  1. Stations nearer the city core run fuller than the far suburbs, even
-#     at the same hour on the same line.
-#  2. The AM peak runs heavier travelling INTO the city, the PM peak
-#     heavier travelling OUT of it — direction matters, not just line.
-# Both are derived from real station coordinates already in STATION_INFO
-# (haversine distance from a CBD reference point), not fabricated.
-_CBD_REFERENCE = STATION_INFO.get("churchgate") or STATION_INFO.get("csmt")
-
-
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6371.0
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlambda / 2) ** 2
-    return 2 * r * math.asin(math.sqrt(a))
-
-
-if _CBD_REFERENCE:
-    _STATION_CBD_KM = {
-        sid: _haversine_km(_CBD_REFERENCE["lat"], _CBD_REFERENCE["lon"], info["lat"], info["lon"])
-        for sid, info in STATION_INFO.items()
-    }
-else:
-    _STATION_CBD_KM = {sid: 0.0 for sid in STATION_INFO}
-_MAX_CBD_KM = max(_STATION_CBD_KM.values()) or 1.0
-
-AM_PEAK_HOURS = set(range(7, 12))
-PM_PEAK_HOURS = set(range(16, 21))
-DIRECTION_TILT = 0.18   # how much a leg's direction shifts which peak dominates
-CENTRALITY_BOOST = 0.10  # how much being near the CBD raises the crowd ceiling
-
-
-def station_suburban_factor(station_id: str) -> float:
-    """0 = at the CBD reference station, 1 = the farthest station on the network."""
-    return min(1.0, _STATION_CBD_KM.get(station_id, 0.0) / _MAX_CBD_KM)
+# --- Crowd prediction ---
+# The model itself lives in crowd_model.py (minute resolution, direction and
+# position along the line, rain). These wrappers keep the original signatures
+# that the /route endpoint and the tests use, where "hour" means the whole
+# hour and a ride is assumed to start at its top.
+crowd_level_for_score = crowd_model.crowd_level_for_score
+CROWD_LEVELS = crowd_model.CROWD_LEVELS
 
 
 def crowd_score_for(
     line: Optional[str], mode: str, hour: int, day_type: str,
     from_station: Optional[str] = None, to_station: Optional[str] = None,
+    is_raining: bool = False,
 ) -> float:
-    lo, hi = CROWD_RANGE_BY_LINE.get(line) or CROWD_RANGE_BY_MODE.get(mode, (0.10, 0.60))
-    factor = get_crowding_penalties(hour, day_type).get(mode, 0.0)  # 0-1 rhythm factor
-
-    if from_station and to_station:
-        from_sub = station_suburban_factor(from_station)
-        to_sub = station_suburban_factor(to_station)
-        inbound = to_sub < from_sub - 0.02   # heading toward the CBD
-        outbound = to_sub > from_sub + 0.02  # heading away from it
-
-        if hour in AM_PEAK_HOURS:
-            factor *= (1 + DIRECTION_TILT) if inbound else (1 - DIRECTION_TILT) if outbound else 1.0
-        elif hour in PM_PEAK_HOURS:
-            factor *= (1 + DIRECTION_TILT) if outbound else (1 - DIRECTION_TILT) if inbound else 1.0
-        factor = max(0.0, min(1.0, factor))
-
-        avg_suburban = (from_sub + to_sub) / 2
-        hi = min(1.0, hi + (1 - avg_suburban) * CENTRALITY_BOOST)
-
-    return min(1.0, lo + factor * (hi - lo))
+    return crowd_model.segment_crowd(line, mode, from_station, to_station, hour + 0.5, day_type, is_raining)
 
 
-def predict_crowd(legs: list[dict], hour: int, day_type: str) -> dict:
+def predict_crowd(legs: list[dict], hour: int, day_type: str, is_raining: bool = False) -> dict:
     """
     Headline crowd forecast for a route, driven by its busiest ride leg (the
     stretch the rider actually feels). Also returns a 24-hour curve for that
     same leg so the frontend can answer "when's the best time to travel?".
     """
     ride_legs = [l for l in legs if l["type"] == "ride"]
+    start = crowd_model.reference_datetime(day_type, hour)
 
-    worst_score = 0.0
-    driver_line = driver_mode = driver_label = None
-    driver_from = driver_to = None
+    worst = None
     for leg in ride_legs:
-        score = crowd_score_for(leg["line"], leg["mode"], hour, day_type, leg["from_station"], leg["to_station"])
-        if score > worst_score:
-            worst_score = score
-            driver_line, driver_mode = leg["line"], leg["mode"]
-            driver_from, driver_to = leg["from_station"], leg["to_station"]
-            driver_label = leg["line"] or MODE_LABELS.get(leg["mode"], leg["mode"])
+        result = crowd_model.leg_crowd(leg["line"], leg["mode"], leg["from_station"], leg["to_station"],
+                                       start, leg["time_minutes"], is_raining)
+        if worst is None or result["score"] > worst[1]["score"]:
+            worst = (leg, result)
 
-    if driver_label is None:  # pure walk route
+    if worst is None:  # pure walk route
         return {"level": "Comfortable", "score": 0.1, "driver": "Walk",
                 "hour": hour, "day_type": day_type, "hourly": []}
 
+    leg, result = worst
     hourly = []
     for h in range(24):
-        s = crowd_score_for(driver_line, driver_mode, h, day_type, driver_from, driver_to)
-        hourly.append({"hour": h, "score": round(s, 2), "level": crowd_level_for_score(s)})
+        r = crowd_model.leg_crowd(leg["line"], leg["mode"], leg["from_station"], leg["to_station"],
+                                  crowd_model.reference_datetime(day_type, h), leg["time_minutes"], is_raining)
+        hourly.append({"hour": h, "score": round(r["score"], 2), "level": r["level"]})
 
-    return {"level": crowd_level_for_score(worst_score), "score": round(worst_score, 2),
-            "driver": driver_label, "hour": hour, "day_type": day_type, "hourly": hourly}
+    return {"level": result["level"], "score": round(result["score"], 2),
+            "driver": leg["line"] or MODE_LABELS.get(leg["mode"], leg["mode"]),
+            "hour": hour, "day_type": day_type, "hourly": hourly}
 
 
 def score_routes(candidates: list[dict], priority: str = "fastest",

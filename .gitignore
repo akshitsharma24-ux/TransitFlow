@@ -38,3 +38,6 @@ project.zip
 # Stale/dead database snapshot — the real one is regenerated via
 # `python -m app.seed_data`, this is a leftover from an earlier pass.
 backend/transitflow_old.db
+
+# Run-time state (rider crowd reports); rebuilt on demand
+backend/transitflow_state.db

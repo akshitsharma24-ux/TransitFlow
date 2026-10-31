@@ -10,23 +10,23 @@ import pytest
 def test_health_endpoint(client):
     res = client.get("/api/")
     assert res.status_code == 200
-    assert res.json()["stations_loaded"] == 112
+    assert res.json()["stations_loaded"] == 149
 
 
 def test_stations_endpoint_lists_all_stations_with_services(client):
     res = client.get("/api/stations")
     assert res.status_code == 200
     stations = res.json()
-    assert len(stations) == 112
+    assert len(stations) == 149
     assert {"name", "lat", "lon", "serves"} <= stations["andheri"].keys()
     assert {"mode": "train", "line": "Western Line"} in stations["andheri"]["serves"]
 
 
-def test_network_endpoint_has_five_lines(client):
+def test_network_endpoint_has_seven_lines(client):
     res = client.get("/api/network")
     assert res.status_code == 200
     lines = res.json()["lines"]
-    assert set(lines) == {"Western Line", "Central Line", "Yellow Line", "Red Line", "Aqua Line"}
+    assert set(lines) == {"Western Line", "Central Line", "Harbour Line", "Yellow Line", "Red Line", "Aqua Line", "Blue Line"}
     assert all(l["segments"] and l["stations"] for l in lines.values())
 
 

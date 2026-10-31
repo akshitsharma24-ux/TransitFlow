@@ -39,9 +39,9 @@ def test_fare_pass_insight_for_train_and_for_road_only():
 # --- Graph construction -------------------------------------------------
 
 def test_graph_size_matches_seed_data():
-    assert len(re_.STATION_INFO) == 112
-    assert re_.GRAPH.number_of_nodes() == 126
-    assert re_.GRAPH.number_of_edges() == 364
+    assert len(re_.STATION_INFO) == 149
+    assert re_.GRAPH.number_of_nodes() == 163
+    assert re_.GRAPH.number_of_edges() == 456
 
 
 def test_graph_is_one_connected_component():

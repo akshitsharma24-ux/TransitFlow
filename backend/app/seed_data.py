@@ -91,12 +91,37 @@ AQUA_LINE = [  # Metro Line 3: Cuffe Parade -> Aarey JVLR (fully underground exc
     ("marol_naka", "Marol Naka"), ("midc", "MIDC"), ("seepz", "SEEPZ"), ("aarey_jvlr", "Aarey JVLR"),
 ]
 
+HARBOUR_LINE = [  # Harbour Line: CSMT -> Panvel (Navi Mumbai). The first, second, third and Kurla
+    # stops are the Harbour-line platforms of stations that Central also serves; they get their own
+    # ids (like Dadar (Central)) and a short walking interchange, so the router never invents a
+    # fake "change" in the middle of a direct Harbour train.
+    ("csmt_harbour", "CSMT (Harbour)"), ("masjid_harbour", "Masjid (Harbour)"),
+    ("sandhurst_road_harbour", "Sandhurst Road (Harbour)"), ("dockyard_road", "Dockyard Road"),
+    ("reay_road", "Reay Road"), ("cotton_green", "Cotton Green"), ("sewri", "Sewri"),
+    ("wadala_road", "Wadala Road"), ("gtb_nagar", "Guru Tegh Bahadur Nagar"), ("chunabhatti", "Chunabhatti"),
+    ("kurla_harbour", "Kurla (Harbour)"), ("tilak_nagar", "Tilak Nagar"), ("chembur", "Chembur"),
+    ("govandi", "Govandi"), ("mankhurd", "Mankhurd"), ("vashi", "Vashi"), ("sanpada", "Sanpada"),
+    ("juinagar", "Juinagar"), ("nerul", "Nerul"), ("seawoods_darave", "Seawoods-Darave"),
+    ("belapur_cbd", "Belapur CBD"), ("kharghar", "Kharghar"), ("mansarovar", "Mansarovar"),
+    ("khandeshwar", "Khandeshwar"), ("panvel", "Panvel"),
+]
+
+BLUE_LINE = [  # Metro Line 1: Versova -> Ghatkopar (Mumbai's first metro, east-west connector)
+    ("versova", "Versova"), ("dn_nagar", "D.N. Nagar"), ("azad_nagar", "Azad Nagar"),
+    ("andheri_metro1", "Andheri (Metro 1)"), ("western_express_highway", "Western Express Highway"),
+    ("chakala", "Chakala (J.B. Nagar)"), ("airport_road", "Airport Road"),
+    ("marol_naka_m1", "Marol Naka (Metro 1)"), ("saki_naka", "Saki Naka"), ("asalpha", "Asalpha"),
+    ("jagruti_nagar", "Jagruti Nagar"), ("ghatkopar_metro", "Ghatkopar (Metro)"),
+]
+
 LINES = [
     ("Western Line", WESTERN_LINE, "train"),
     ("Central Line", CENTRAL_LINE, "train"),
     ("Yellow Line", YELLOW_LINE, "metro"),
     ("Red Line", RED_LINE, "metro"),
     ("Aqua Line", AQUA_LINE, "metro"),
+    ("Harbour Line", HARBOUR_LINE, "train"),
+    ("Blue Line", BLUE_LINE, "metro"),
 ]
 
 # Real anchor coordinates (lat, lon) for a handful of stations per line —
@@ -125,6 +150,16 @@ ANCHORS = {
         "dadar_metro": (19.0178, 72.8478), "bkc": (19.0662, 72.8681),
         "santacruz_metro": (19.0822, 72.8412), "seepz": (19.1197, 72.8697),
         "aarey_jvlr": (19.1547, 72.8781),
+    },
+    "Harbour Line": {
+        "csmt_harbour": (18.9398, 72.8355), "wadala_road": (19.0176, 72.8587),
+        "kurla_harbour": (19.0653, 72.8790), "chembur": (19.0622, 72.9005),
+        "mankhurd": (19.0486, 72.9326), "vashi": (19.0745, 72.9980), "nerul": (19.0338, 73.0196),
+        "belapur_cbd": (19.0190, 73.0390), "panvel": (18.9894, 73.1175),
+    },
+    "Blue Line": {
+        "versova": (19.1316, 72.8165), "andheri_metro1": (19.1197, 72.8490),
+        "marol_naka_m1": (19.1071, 72.8764), "ghatkopar_metro": (19.0860, 72.9085),
     },
 }
 
@@ -182,6 +217,8 @@ for line_name, stops, mode in LINES:
     comfort = {"train": 2, "metro": 4}[mode]
     if line_name == "Aqua Line":
         comfort = 4.5  # newest, least crowded of the three metro lines
+    elif line_name == "Blue Line":
+        comfort = 3.5  # Metro 1 runs short trains and is known to be packed at peak
 
     for i in range(len(stops) - 1):
         (from_id, _), (to_id, _) = stops[i], stops[i + 1]
@@ -233,6 +270,19 @@ INTERCHANGES = [
     ("dadar_central", "dadar_metro", 8),    # Central <-> Aqua Line at Dadar
     ("csmt", "csmt_metro", 5),              # Central rail terminus <-> Aqua Line CSMT
     ("matunga", "matunga_road", 9),         # Central Matunga <-> Western Matunga Road
+
+    # Harbour Line platforms <-> the Central/other platforms of the same stations
+    ("csmt", "csmt_harbour", 1),     # same terminus building
+    ("masjid", "masjid_harbour", 2),
+    ("sandhurst_road", "sandhurst_road_harbour", 2),
+    ("kurla", "kurla_harbour", 4),
+
+    # Metro Line 1 (Blue) interchanges
+    ("andheri", "andheri_metro1", 7),              # Western Line <-> Metro 1, east side of Andheri
+    ("andheri_west", "dn_nagar", 3),               # Yellow Line terminus <-> Metro 1 at D.N. Nagar
+    ("gundavali", "western_express_highway", 3),   # Red Line <-> Metro 1
+    ("marol_naka", "marol_naka_m1", 4),            # Aqua Line <-> Metro 1
+    ("ghatkopar", "ghatkopar_metro", 6),           # Central Line <-> Metro 1 via the skywalk
 ]
 
 # One row per (mode, hour, day_type): a 0-1 "how full is a typical

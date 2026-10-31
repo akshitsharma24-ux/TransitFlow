@@ -30,6 +30,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from app.schemas import FarePassInsight, Leg, StationPoint
+from app.routes_plan import router as plan_router
+from app.routes_live import router as live_router
+from app.routes_chat import router as chat_router
+
 from app.routing_engine import (
     STATION_INFO, STATION_SERVICES, MODE_LABELS, get_ranked_routes, default_hour_and_day_type,
     fare_pass_insight, predict_crowd,
@@ -51,6 +56,11 @@ app.add_middleware(
 )
 
 
+app.include_router(plan_router)
+app.include_router(live_router)
+app.include_router(chat_router)
+
+
 # --- Request/response shapes ---
 
 class RouteRequest(BaseModel):
@@ -62,29 +72,6 @@ class RouteRequest(BaseModel):
     is_raining: bool = False
     hour: Optional[int] = Field(default=None, ge=0, le=23)
     day_type: Optional[Literal["weekday", "weekend"]] = None
-
-
-class StationPoint(BaseModel):
-    id: str
-    name: str
-    lat: float
-    lon: float
-
-
-class Leg(BaseModel):
-    type: str                 # "ride" | "walk"
-    mode: Optional[str]        # "train" | "metro" | "bus" | "road" | None (for walk)
-    line: Optional[str]        # e.g. "Yellow Line", None for walk/road/bus
-    from_station: StationPoint
-    to_station: StationPoint
-    time_minutes: int
-    cost_rupees: int           # 0 for walk legs
-
-
-class FarePassInsight(BaseModel):
-    mode: str
-    monthly_pass_cost: int
-    breakeven_commute_days: float
 
 
 class HourCrowd(BaseModel):
