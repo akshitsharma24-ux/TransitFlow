@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useMemo, useState } from 'react';
 import MapGL, { Marker, Popup, Source, Layer, NavigationControl, ScaleControl, AttributionControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Locate } from 'lucide-react';
+import { Locate, Maximize2, Minimize2 } from 'lucide-react';
 import { getLineConfig } from '../utils/lineColors';
 
 // CARTO Voyager: free, keyless vector basemap. Chosen over a dark style
@@ -16,6 +16,20 @@ export default function MapPanel({ selectedOption, stationsMap = {} }) {
   const mapRef = useRef(null);
   const [activePopupMarker, setActivePopupMarker] = useState(null);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
+  const containerRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Native fullscreen: unaffected by transformed ancestors, no remount, and the browser handles Esc.
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === containerRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else containerRef.current?.requestFullscreen?.().catch((err) => console.warn('Fullscreen failed:', err));
+  };
 
   // Belt-and-suspenders: if `onLoad` is ever missed (a hot-reloaded map
   // instance whose 'load' event already fired before this handler existed,
@@ -139,16 +153,31 @@ export default function MapPanel({ selectedOption, stationsMap = {} }) {
     }
   };
 
+  // Re-measure and re-fit once the container has changed size
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      mapRef.current?.resize?.();
+      fitToBounds();
+    }, 100);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFullscreen]);
+
   // Smooth fitBounds transition when route option changes
   useEffect(() => {
     if (isStyleLoaded) fitToBounds();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bounds, isStyleLoaded]);
 
-  const defaultCenter = { longitude: 72.8777, latitude: 19.076, zoom: 11 };
+  const defaultCenter = { longitude: 72.8777, latitude: 19.076, zoom: 11, pitch: 62, bearing: -20 };
 
   return (
-    <div className="relative w-full h-[460px] lg:h-[580px] rounded-3xl overflow-hidden bg-[#E9E7DF]">
+    <div
+      ref={containerRef}
+      className={`relative w-full overflow-hidden bg-[#E9E7DF] ${
+        isFullscreen ? 'h-screen' : 'h-[460px] lg:h-[580px] rounded-3xl'
+      }`}
+    >
       <MapGL
         ref={mapRef}
         initialViewState={defaultCenter}
@@ -156,14 +185,30 @@ export default function MapPanel({ selectedOption, stationsMap = {} }) {
         style={{ width: '100%', height: '100%' }}
         minZoom={8.5}
         maxZoom={17}
+        maxPitch={75}
         // Requires Ctrl/Cmd + scroll to zoom, so the map never traps normal
         // page-scroll — that was reading as "zooming is broken" before.
-        cooperativeGestures={true}
+        cooperativeGestures={!isFullscreen}
         onLoad={() => setIsStyleLoaded(true)}
       >
         <NavigationControl position="top-right" showCompass={false} />
         <ScaleControl position="bottom-left" maxWidth={120} unit="metric" />
         <AttributionControl compact position="bottom-right" />
+
+        {/* Extruded buildings (visible at street-level zoom) */}
+        <Layer
+          id="buildings-3d"
+          source="carto"
+          source-layer="building"
+          type="fill-extrusion"
+          minzoom={13}
+          paint={{
+            'fill-extrusion-color': '#cfd3da',
+            'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 8],
+            'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+            'fill-extrusion-opacity': 0.8,
+          }}
+        />
 
         {/* Polylines via MapLibre Vector Source & Layers */}
         <Source id="route-source" type="geojson" data={geojson}>
@@ -307,6 +352,16 @@ export default function MapPanel({ selectedOption, stationsMap = {} }) {
         className="absolute top-[52px] right-2.5 z-10 w-[29px] h-[29px] flex items-center justify-center rounded-md bg-white border border-slate-300/70 text-slate-600 hover:text-[#2BB5C6] shadow-md transition-colors cursor-pointer"
       >
         <Locate className="w-3.5 h-3.5" />
+      </button>
+
+      <button
+        type="button"
+        onClick={toggleFullscreen}
+        title={isFullscreen ? 'Exit full screen' : 'View full screen'}
+        aria-label={isFullscreen ? 'Exit full screen' : 'View full screen'}
+        className="absolute top-[88px] right-2.5 z-10 w-[29px] h-[29px] flex items-center justify-center rounded-md bg-white border border-slate-300/70 text-slate-600 hover:text-[#2BB5C6] shadow-md transition-colors cursor-pointer"
+      >
+        {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
       </button>
 
       {/* Floating Map Legend Overlay */}
