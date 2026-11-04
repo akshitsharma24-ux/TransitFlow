@@ -16,6 +16,13 @@ TransitFlow is a Third Year Mini Project (Semester V, 2026-27) for the Departmen
 - Models the network as a layered directed multigraph where every node is a `(station, mode)` pair, so changing between train, metro and bus costs time.
 - Uses Yen's k-shortest-paths (repeated Dijkstra) on three weightings (time, cost, comfort) to find alternatives that actually differ, instead of one best path.
 - Shows a monthly-pass break-even estimate, a journey timeline, an interactive route map and a map of the whole network.
+- The route map opens in a tilted **3D view** with extruded buildings at street-level zoom, and has a **full-screen** button (press Esc to leave it).
+
+**Network resilience** (new, in the *Compare* tab)
+
+- **Disruption simulator**: below the search board, close whole lines or individual stations, then search again. The router rebuilds the network without them and finds the best remaining route, or reports that none exists. Origin and destination can't be closed stations.
+- **Resilience report**: ranks every station by betweenness centrality (how many shortest journeys pass through it) and lists the single points of failure, the stations whose closure disconnects part of the network, with how many stations each would cut off.
+- A closed station is removed completely: nothing can board, alight, change or pass through it. Real operators usually let trains run through a closed station, so this is a harsher model than reality (see limits).
 
 **Trip Planner** (new)
 
@@ -112,6 +119,7 @@ The frontend calls `http://127.0.0.1:8000/api` by default. Set `VITE_API_URL` to
 | GET | `/api/stations` | Every station with coordinates and the lines that serve it |
 | GET | `/api/network` | Line segments and stations for the overview map |
 | POST | `/api/route` | Ranked route options for a journey (the Compare tab) |
+| GET | `/api/resilience` | Station betweenness, single points of failure and the list of lines (computed once, then cached) |
 | POST | `/api/plan` | One journey on the clock, with per-leg crowd, alternatives and the departure advisor |
 | POST | `/api/plan/day` | A multi-stop day of chained trips |
 | GET | `/api/live` | Network-wide crowd and service status right now (Mumbai time) |
@@ -133,7 +141,7 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 
 `/api/plan` takes `when` (`depart` or `arrive`), `preference` (`balanced`, `fastest`, `cheapest`, `comfortable`, `least_crowded`, `fewest_transfers`), `is_raining`, and `avoid` (any of `train`, `metro`, `bus`, `road`). Times are 24-hour `HH:MM` in Mumbai time; if `date` or `time` is omitted they default to now. Invalid input is rejected with HTTP 422, unknown stations with 400, and a pair with no route (for example everything avoided) with 404.
 
-The original `/api/route` still takes `priority` (`fastest`, `cheapest`, `comfortable`), `hour` (0 to 23) and `day_type` (`weekday`, `weekend`).
+The original `/api/route` still takes `priority` (`fastest`, `cheapest`, `comfortable`), `hour` (0 to 23) and `day_type` (`weekday`, `weekend`). It also accepts `closed_stations` and `closed_lines` (both lists, default empty) to route around a disruption, for example `{"origin":"kurla","destination":"bhandup","closed_stations":["vidyavihar"]}`. Requests are served one at a time while a disruption is applied.
 
 ## Deploying on Vercel
 
@@ -187,6 +195,7 @@ vercel.json       frontend + backend service configuration for Vercel
 
 - **Crowd levels are estimates from a model**, not live passenger counts. Rider reports are real but sparse; the fluctuations and service alerts shown as "live" are simulated and labelled as such.
 - On Vercel the filesystem is read-only except `/tmp`, so rider reports there are short-lived (they vanish when an instance is recycled). Set `STATE_DATABASE_URL` to a PostgreSQL URL to make them durable.
+- Disruptions are all-or-nothing: a closed station or line is removed from the network entirely, with no partial closures (one segment, one mode at a station) and no through-running past a closed station. Closing one stop can therefore add far more detour time than it would in practice.
 - Service hours and headways are approximate figures, not timetables. Last-train times in particular vary by station and direction.
 - Station coordinates are linearly interpolated between a few anchor points per line, not surveyed GPS positions. Interchange walking times are estimates.
 - Fares and in-vehicle times are calibrated estimates, not operator data. The bus and road layer is a single core corridor.

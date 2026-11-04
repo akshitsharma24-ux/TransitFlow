@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { TrainFront } from 'lucide-react';
-import { fetchStations, calculateRoute } from './api';
+import { fetchStations, calculateRoute, fetchResilience } from './api';
 import SearchBoard from './components/SearchBoard';
 import BentoResultsGrid from './components/BentoResultsGrid';
 import StatsStrip from './components/StatsStrip';
@@ -13,6 +13,8 @@ import HowItWorksSection from './components/HowItWorksSection';
 import CommandPalette from './components/CommandPalette';
 import ScrollProgressBar from './components/ScrollProgressBar';
 import NetworkMap from './components/NetworkMap';
+import DisruptionPanel from './components/DisruptionPanel';
+import ResilienceSection from './components/ResilienceSection';
 import useLenis from './hooks/useLenis';
 import TripPlanner from './components/TripPlanner';
 import DayPlanner from './components/DayPlanner';
@@ -51,6 +53,9 @@ export default function App() {
   const [stationsMap, setStationsMap] = useState({});
   const [isStationsLoading, setIsStationsLoading] = useState(true);
   const [stationsError, setStationsError] = useState(null);
+  const [resilience, setResilience] = useState(null);
+  const [closedLines, setClosedLines] = useState([]);
+  const [closedStations, setClosedStations] = useState([]);
 
   const now = new Date();
   const currentHour = now.getHours();
@@ -138,6 +143,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
+    fetchResilience()
+      .then((data) => isMounted && setResilience(data))
+      .catch((err) => console.error('Failed to load resilience data:', err));
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -168,6 +183,8 @@ export default function App() {
       is_raining: isRaining,
       hour,
       day_type: dayType,
+      closed_stations: closedStations,
+      closed_lines: closedLines,
     };
 
     try {
@@ -261,6 +278,10 @@ export default function App() {
   const handlePaletteToggleRain = () => setIsRaining((prev) => !prev);
 
   const options = routeData?.options || [];
+
+  const stationList = Object.entries(stationsMap)
+    .map(([id, s]) => ({ id, name: s.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const scrollToTop = () => {
     if (lenisRef.current) lenisRef.current.scrollTo(0, { immediate: true });
@@ -428,6 +449,17 @@ export default function App() {
           />
         </HeroCanvasAnimation>
 
+        <div className="relative z-10">
+          <DisruptionPanel
+            lines={resilience?.lines || []}
+            stations={stationList}
+            closedLines={closedLines}
+            setClosedLines={setClosedLines}
+            closedStations={closedStations}
+            setClosedStations={setClosedStations}
+          />
+        </div>
+
         {/* 2. Verified Real Stats Strip */}
         <StatsStrip />
 
@@ -468,6 +500,8 @@ export default function App() {
 
         {/* 4. Full System Network Map — explore every line */}
         <NetworkMap />
+
+        <ResilienceSection data={resilience} />
 
         {/* 5. Real Algorithmic Features Section */}
         <FeaturesSection />

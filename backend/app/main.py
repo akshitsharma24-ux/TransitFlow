@@ -34,6 +34,7 @@ from app.schemas import FarePassInsight, Leg, StationPoint
 from app.routes_plan import router as plan_router
 from app.routes_live import router as live_router
 from app.routes_chat import router as chat_router
+from app.resilience import disruption, resilience_report
 
 from app.routing_engine import (
     STATION_INFO, STATION_SERVICES, MODE_LABELS, get_ranked_routes, default_hour_and_day_type,
@@ -72,6 +73,8 @@ class RouteRequest(BaseModel):
     is_raining: bool = False
     hour: Optional[int] = Field(default=None, ge=0, le=23)
     day_type: Optional[Literal["weekday", "weekend"]] = None
+    closed_stations: list[str] = []
+    closed_lines: list[str] = []
 
 
 class HourCrowd(BaseModel):
@@ -251,6 +254,11 @@ def get_network():
     }
 
 
+@app.get("/api/resilience")
+def get_resilience():
+    return resilience_report()
+
+
 @app.post("/api/route", response_model=RouteResponse)
 def get_routes(request: RouteRequest):
     origin = request.origin.lower()
@@ -267,7 +275,8 @@ def get_routes(request: RouteRequest):
     hour = request.hour if request.hour is not None else default_hour
     day_type = request.day_type if request.day_type is not None else default_day_type
 
-    ranked = get_ranked_routes(origin, destination, request.priority, request.is_raining, hour, day_type)
+    with disruption([s.lower() for s in request.closed_stations], request.closed_lines):
+        ranked = get_ranked_routes(origin, destination, request.priority, request.is_raining, hour, day_type)
 
     if not ranked:
         raise HTTPException(status_code=404, detail="No routes found between these stations.")

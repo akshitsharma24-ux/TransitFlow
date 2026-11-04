@@ -47,7 +47,9 @@ export async function fetchNetwork() {
  *   priority: 'fastest' | 'cheapest' | 'comfortable',
  *   is_raining: boolean,
  *   hour: number,
- *   day_type: 'weekday' | 'weekend'
+ *   day_type: 'weekday' | 'weekend',
+ *   closed_stations?: string[],
+ *   closed_lines?: string[]
  * }} requestBody
  * @returns {Promise<{
  *   origin: string,
@@ -65,7 +67,7 @@ export async function calculateRoute(requestBody) {
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(requestBody),
+    body: JSON.stringify({ closed_stations: [], closed_lines: [], ...requestBody }),
   });
 
   if (!response.ok) {
@@ -75,6 +77,12 @@ export async function calculateRoute(requestBody) {
 
   return response.json();
 }
+
+/**
+ * Station criticality for the whole network.
+ * @returns {Promise<{stations: Array<{id:string,name:string,betweenness:number,is_articulation:boolean,cut_off:number}>, lines: string[]}>}
+ */
+export const fetchResilience = () => getJson('/resilience', 'Could not load resilience data');
 
 // --- Planner, live crowd and assistant -----------------------------------
 
